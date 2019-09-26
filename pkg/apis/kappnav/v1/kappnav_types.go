@@ -15,6 +15,10 @@ type KappnavSpec struct {
 	AppNavController *KappnavContainerConfiguration        `json:"appNavController,omitempty"`
 	AppNavUI         *KappnavServiceContainerConfiguration `json:"appNavUI,omitempty"`
 	AppNavInit       *KappnavContainerConfiguration        `json:"appNavInit,omitempty"`
+	Image            *KappnavImageConfiguration            `json:"image,omitempty"`
+	Env              *Environment                          `json:"env,omitempty"`
+	Arch             *Architecture                         `json:"arch,omitempty"`
+	Console          *KappnavConsoleConfiguration          `json:"console,omitempty"`
 }
 
 // KappnavContainerConfiguration defines the configuration for a Kappnav container
@@ -45,7 +49,7 @@ type Tag string
 
 // KappnavServiceContainerConfiguration defines the configuration for a Kappnav container with a service
 type KappnavServiceContainerConfiguration struct {
-    KappnavContainerConfiguration `json:",inline"`
+	KappnavContainerConfiguration `json:",inline"`
 	Service Service               `json:"service,omitempty"`
 }
 
@@ -56,6 +60,43 @@ type Service struct {
 
 // ServiceType ...
 type ServiceType string
+
+// KappnavImageConfiguration ...
+type KappnavImageConfiguration struct {
+	PullPolicy  corev1.PullPolicy `json:"pullPolicy,omitempty"`
+	PullSecrets []string          `json:"pullSecrets,omitempty"`
+}
+
+// Environment variables.
+type Environment struct {
+	KubeEnv string `json:"kubeEnv,omitempty"`
+}
+
+// Architecture ...
+type Architecture struct {
+	Amd64   SchedulingWeight `json:"amd64,omitempty"`
+	Ppc64le SchedulingWeight `json:"ppc64le,omitempty"`
+	S390x   SchedulingWeight `json:"s390x,omitempty"`
+}
+
+// SchedulingWeight ...
+type SchedulingWeight string
+const(
+	// DoNotUse ...
+	DoNotUse       SchedulingWeight = "0 - Do not use"
+	// LeastPreferred ...
+	LeastPreferred SchedulingWeight = "1 - Least preferred"
+	// NoPreference ...
+	NoPreference   SchedulingWeight = "2 - No preference"
+    // MostPreferred ...
+	MostPreferred  SchedulingWeight = "3 - Most preferred"
+)
+
+// KappnavConsoleConfiguration ...
+type KappnavConsoleConfiguration struct {
+	EnableOkdFeaturedApp bool `json:"enableOkdFeaturedApp,omitempty"`
+	EnableOkdLauncher    bool `json:"enableOkdLauncher,omitempty"`
+}
 
 // KappnavStatus defines the observed state of Kappnav
 // +k8s:openapi-gen=true

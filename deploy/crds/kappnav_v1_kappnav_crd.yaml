@@ -138,6 +138,36 @@ spec:
                 tag:
                   type: string
               type: object
+            arch:
+              properties:
+                amd64:
+                  type: string
+                ppc64le:
+                  type: string
+                s390x:
+                  type: string
+              type: object
+            console:
+              properties:
+                enableOkdFeaturedApp:
+                  type: boolean
+                enableOkdLauncher:
+                  type: boolean
+              type: object
+            env:
+              properties:
+                kubeEnv:
+                  type: string
+              type: object
+            image:
+              properties:
+                pullPolicy:
+                  type: string
+                pullSecrets:
+                  items:
+                    type: string
+                  type: array
+              type: object
           type: object
         status:
           properties:
