@@ -23,16 +23,16 @@ type KappnavSpec struct {
 
 // KappnavContainerConfiguration defines the configuration for a Kappnav container
 type KappnavContainerConfiguration struct {
-	Repository Repository                 `json:"repository,omitempty"`
-	Tag        Tag                        `json:"tag,omitempty"`
-	Resources  KappnavResourceConstraints `json:"resources,omitempty"`
+	Repository Repository                  `json:"repository,omitempty"`
+	Tag        Tag                         `json:"tag,omitempty"`
+	Resources  *KappnavResourceConstraints `json:"resources,omitempty"`
 }
 
 // KappnavResourceConstraints defines resource constraints for a Kappnav container
 type KappnavResourceConstraints struct {
-	Enabled  bool      `json:"enabled,omitempty"`
-	Requests Resources `json:"requests,omitempty"`
-	Limits   Resources `json:"limits,omitempty"`
+	Enabled  bool       `json:"enabled,omitempty"`
+	Requests *Resources `json:"requests,omitempty"`
+	Limits   *Resources `json:"limits,omitempty"`
 }
 
 // Resources ...
@@ -50,7 +50,7 @@ type Tag string
 // KappnavServiceContainerConfiguration defines the configuration for a Kappnav container with a service
 type KappnavServiceContainerConfiguration struct {
 	KappnavContainerConfiguration `json:",inline"`
-	Service Service               `json:"service,omitempty"`
+	Service *Service              `json:"service,omitempty"`
 }
 
 // Service ...
@@ -88,7 +88,7 @@ const(
 	LeastPreferred SchedulingWeight = "1 - Least preferred"
 	// NoPreference ...
 	NoPreference   SchedulingWeight = "2 - No preference"
-    // MostPreferred ...
+	// MostPreferred ...
 	MostPreferred  SchedulingWeight = "3 - Most preferred"
 )
 
