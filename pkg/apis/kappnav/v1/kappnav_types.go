@@ -92,7 +92,7 @@ const(
 	MostPreferred  SchedulingWeight = "3 - Most preferred"
 )
 
-// KappnavConsoleConfiguration ...
+// KappnavConsoleConfiguration is configuration for the OpenShift web console.
 type KappnavConsoleConfiguration struct {
 	EnableOkdFeaturedApp bool `json:"enableOkdFeaturedApp,omitempty"`
 	EnableOkdLauncher    bool `json:"enableOkdLauncher,omitempty"`
@@ -101,8 +101,13 @@ type KappnavConsoleConfiguration struct {
 // KappnavStatus defines the observed state of Kappnav
 // +k8s:openapi-gen=true
 type KappnavStatus struct {
+	Conditions []StatusCondition `json:"conditions,omitempty"`
+}
+
+// StatusCondition ...
+type StatusCondition struct {
 	LastTransitionTime *metav1.Time           `json:"lastTransitionTime,omitempty"`
-	LastUpdateTime     *metav1.Time           `json:"lastUpdateTime,omitempty"`
+	LastUpdateTime     metav1.Time            `json:"lastUpdateTime,omitempty"`
 	Reason             string                 `json:"reason,omitempty"`
 	Message            string                 `json:"message,omitempty"`
 	Status             corev1.ConditionStatus `json:"status,omitempty"`
@@ -111,6 +116,11 @@ type KappnavStatus struct {
 
 // StatusConditionType ...
 type StatusConditionType string
+
+const (
+	// StatusConditionTypeReconciled ...
+	StatusConditionTypeReconciled StatusConditionType = "Reconciled"
+)
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 

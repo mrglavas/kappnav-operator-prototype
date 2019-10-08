@@ -4,12 +4,11 @@ import (
 	"context"
 
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
+	kappnavutils "github.com/kappnav/operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -34,7 +33,8 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileKappnav{client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(), 
+		mgr.GetScheme(), mgr.GetConfig(), mgr.GetRecorder("kappnav-operator"))}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -71,8 +71,7 @@ var _ reconcile.Reconciler = &ReconcileKappnav{}
 type ReconcileKappnav struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
+	kappnavutils.ReconcilerBase
 }
 
 // Reconcile reads that state of the cluster for a Kappnav object and makes changes based on the state read
@@ -88,7 +87,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// Fetch the Kappnav instance
 	instance := &kappnavv1.Kappnav{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	err := r.GetClient().Get(context.TODO(), request.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -104,29 +103,29 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	pod := newPodForCR(instance)
 
 	// Set Kappnav instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(instance, pod, r.GetScheme()); err != nil {
 		return reconcile.Result{}, err
 	}
 
 	// Check if this Pod already exists
 	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+	err = r.GetClient().Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
+		err = r.GetClient().Create(context.TODO(), pod)
 		if err != nil {
-			return reconcile.Result{}, err
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 		}
 
 		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
+		return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 	} else if err != nil {
-		return reconcile.Result{}, err
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 	}
 
 	// Pod already exists - don't requeue
 	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return reconcile.Result{}, nil
+	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
