@@ -52,6 +52,13 @@ const (
 	KubeEnvDefault string = "okd"
 )
 
+const (
+	// UIVolumeName ...
+	UIVolumeName string = "kappnav-ui-service-tls"
+	// UIVolumeMountPath ...
+	UIVolumeMountPath string = "/etc/tls/private"
+)
+
 // GetLabels ...
 func GetLabels(instance *kappnavv1.Kappnav, component *metav1.ObjectMeta) map[string]string {
 	labels := map[string]string{
@@ -82,18 +89,18 @@ func CustomizeDeployment(deploy *appsv1.Deployment, instance *kappnavv1.Kappnav)
 	deploy.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app.kubernetes.io/name":      instance.Name,
-			"app.kubernetes.io/component": deploy.GetName(),
 		},
 	}
 }
 
 // CustomizePodSpec ...
 func CustomizePodSpec(pts *corev1.PodTemplateSpec,
-	containers []corev1.Container, instance *kappnavv1.Kappnav) {
+	containers []corev1.Container, volumes []corev1.Volume, instance *kappnavv1.Kappnav) {
 	pts.Labels = GetLabels(instance, &pts.ObjectMeta)
 	pts.Spec.Containers = containers
 	pts.Spec.RestartPolicy = corev1.RestartPolicyAlways
 	pts.Spec.ServiceAccountName = ServiceAccountName
+	pts.Spec.Volumes = volumes
 	setPodSecurity(pts)
 }
 
@@ -103,7 +110,7 @@ func CreateUIDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.Containe
 		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, 
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
 		*createContainer(UIContainerName, instance, &instance.Spec.AppNavUI.KappnavContainerConfiguration, 
-			createUIReadinessProbe(instance), createUILiveinessProbe(instance), nil),
+			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount()),
 	}
 }
 
@@ -114,6 +121,20 @@ func CreateControllerDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
 		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController, 
 			createControllerReadinessProbe(), createControllerLivenessProbe(), nil),
+	}
+}
+
+// CreateUIVolumes ...
+func CreateUIVolumes() []corev1.Volume {
+	return []corev1.Volume{
+		{
+			Name: UIVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: UIVolumeName,
+				},
+			},
+		},
 	}
 }
 
@@ -381,6 +402,14 @@ func createUILiveinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 	probe.InitialDelaySeconds = 40
 	probe.PeriodSeconds = 30
 	return probe
+}
+
+func createUIVolumeMount() *corev1.VolumeMount {
+	volumeMount := &corev1.VolumeMount{
+		MountPath: UIVolumeMountPath,
+		Name: UIVolumeName,
+	}
+	return volumeMount
 }
 
 func createControllerReadinessProbe() *corev1.Probe {

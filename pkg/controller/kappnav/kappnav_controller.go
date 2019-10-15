@@ -5,12 +5,10 @@ import (
 
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	kappnavutils "github.com/kappnav/operator/pkg/utils"
-	corev1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -52,8 +50,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner Kappnav
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	// Watch for changes to secondary resource Deployment and requeue the owner Kappnav
+	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &kappnavv1.Kappnav{},
 	})
@@ -98,54 +96,45 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+	// Apply defaults to the Kappnav instance
+	kappnavutils.SetKappnavDefaults(instance)
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set Kappnav instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.GetScheme()); err != nil {
-		return reconcile.Result{}, err
+	// Create or update the UI deployment
+	uiDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: instance.GetName() + "-ui",
+			Namespace: instance.GetNamespace(),
+		},
 	}
-
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.GetClient().Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.GetClient().Create(context.TODO(), pod)
-		if err != nil {
-			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-		}
-
-		// Pod created successfully - don't requeue
-		return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
-	} else if err != nil {
+	err = r.CreateOrUpdate(uiDeployment, instance, func() error {
+		kappnavutils.CustomizeDeployment(uiDeployment, instance)
+		kappnavutils.CustomizePodSpec(&uiDeployment.Spec.Template, 
+			kappnavutils.CreateUIDeploymentContainers(instance),
+			kappnavutils.CreateUIVolumes(), instance)
+		return nil
+	})
+	if err != nil {
+		reqLogger.Error(err, "Failed to reconcile the UI Deployment")
 		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
-}
-
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *kappnavv1.Kappnav) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
+	// Create or update the Controller deployment
+	controllerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-giddyup-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "giddyup",
-					Image:   "kappnav/giddyup",
-				},
-			},
+			Name: instance.GetName() + "-controller",
+			Namespace: instance.GetNamespace(),
 		},
 	}
+	err = r.CreateOrUpdate(controllerDeployment, instance, func() error {
+		kappnavutils.CustomizeDeployment(controllerDeployment, instance)
+		kappnavutils.CustomizePodSpec(&controllerDeployment.Spec.Template, 
+			kappnavutils.CreateControllerDeploymentContainers(instance), nil, instance)
+		return nil
+	})
+	if err != nil {
+		reqLogger.Error(err, "Failed to reconcile the Controller Deployment")
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+	}
+
+	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 }
