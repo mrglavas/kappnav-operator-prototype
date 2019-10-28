@@ -6,6 +6,7 @@ ENV OPERATOR=/usr/local/bin/kappnav-operator \
 
 # install operator binary
 COPY build/_output/bin/kappnav-operator ${OPERATOR}
+COPY deploy/maps/ maps/
 
 COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup

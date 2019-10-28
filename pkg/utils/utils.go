@@ -4,6 +4,7 @@ import (
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -54,7 +55,7 @@ const (
 
 const (
 	// UIVolumeName ...
-	UIVolumeName string = "kappnav-ui-service-tls"
+	UIVolumeName string = "ui-service-tls"
 	// UIVolumeMountPath ...
 	UIVolumeMountPath string = "/etc/tls/private"
 )
@@ -78,6 +79,22 @@ func GetLabels(instance *kappnavv1.Kappnav, component *metav1.ObjectMeta) map[st
 	return labels
 }
 
+// CustomizeSecret ...
+func CustomizeSecret(secret *corev1.Secret, instance *kappnavv1.Kappnav) {
+	secret.Labels = GetLabels(instance, &secret.ObjectMeta)
+}
+
+// CustomizeService ...
+func CustomizeService(service *corev1.Service, instance *kappnavv1.Kappnav, annotations map[string]string) {
+	service.Labels = GetLabels(instance, &service.ObjectMeta)
+	service.Annotations = annotations
+}
+
+// CustomizeIngress ...
+func CustomizeIngress(ingress *extensionsv1beta1.Ingress, instance *kappnavv1.Kappnav) {
+	ingress.Labels = GetLabels(instance, &ingress.ObjectMeta)
+}
+
 // CustomizeDeployment ...
 func CustomizeDeployment(deploy *appsv1.Deployment, instance *kappnavv1.Kappnav) {
 	deploy.Labels = GetLabels(instance, &deploy.ObjectMeta)
@@ -88,20 +105,52 @@ func CustomizeDeployment(deploy *appsv1.Deployment, instance *kappnavv1.Kappnav)
 	}
 	deploy.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"app.kubernetes.io/name":      instance.Name,
+			"app.kubernetes.io/component": deploy.GetName(),
 		},
 	}
 }
 
 // CustomizePodSpec ...
-func CustomizePodSpec(pts *corev1.PodTemplateSpec,
+func CustomizePodSpec(pts *corev1.PodTemplateSpec, parentComponent *metav1.ObjectMeta,
 	containers []corev1.Container, volumes []corev1.Volume, instance *kappnavv1.Kappnav) {
-	pts.Labels = GetLabels(instance, &pts.ObjectMeta)
+	pts.Labels = GetLabels(instance, parentComponent)
 	pts.Spec.Containers = containers
 	pts.Spec.RestartPolicy = corev1.RestartPolicyAlways
 	pts.Spec.ServiceAccountName = ServiceAccountName
 	pts.Spec.Volumes = volumes
 	setPodSecurity(pts)
+}
+
+// CustomizeKappnavConfigMap ...
+func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
+	if kappnavConfig.Data == nil {
+		kappnavConfig.Data = make(map[string]string)
+	}
+	value, _ := kappnavConfig.Data["status-color-mapping"]
+	if len(value) == 0 {
+		kappnavConfig.Data["status-color-mapping"] = 
+		"{ \"values\": { \"Normal\": \"GREEN\", \"Warning\": \"YELLOW\", \"Problem\": \"RED\", \"Unknown\": \"GREY\"}," +
+		  "\"colors\": { \"GREEN\":  \"#5aa700\", \"YELLOW\": \"#B4B017\", \"RED\": \"#A74343\", \"GREY\" : \"#808080\"} }"
+	}
+	value, _ = kappnavConfig.Data["app-status-precedence"]
+	if len(value) == 0 {
+		kappnavConfig.Data["app-status-precedence"] = "[ \"Problem\", \"Warning\", \"Unknown\", \"Normal\" ]"
+	}
+	value, _ = kappnavConfig.Data["status-unknown"]
+	if len(value) == 0 {
+		kappnavConfig.Data["status-unknown"] = "Unknown"
+	}
+	kappnavConfig.Data["kappnav-sa-name"] = ServiceAccountName
+	if instance.Spec.Console.EnableOkdFeaturedApp {
+		kappnavConfig.Data["okd-console-featured-app"] = "enabled"
+	} else {
+		kappnavConfig.Data["okd-console-featured-app"] = "disabled"
+	}
+	if instance.Spec.Console.EnableOkdLauncher {
+		kappnavConfig.Data["okd-console-app-launcher"] = "enabled"
+	} else {
+		kappnavConfig.Data["okd-console-app-launcher"] = "disabled"
+	}
 }
 
 // CreateUIDeploymentContainers ...
@@ -110,7 +159,7 @@ func CreateUIDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.Containe
 		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, 
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
 		*createContainer(UIContainerName, instance, &instance.Spec.AppNavUI.KappnavContainerConfiguration, 
-			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount()),
+			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount(instance)),
 	}
 }
 
@@ -125,13 +174,14 @@ func CreateControllerDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.
 }
 
 // CreateUIVolumes ...
-func CreateUIVolumes() []corev1.Volume {
+func CreateUIVolumes(instance *kappnavv1.Kappnav) []corev1.Volume {
+	name := instance.Name + "-" + UIVolumeName
 	return []corev1.Volume{
 		{
-			Name: UIVolumeName,
+			Name: name,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: UIVolumeName,
+					SecretName: name,
 				},
 			},
 		},
@@ -290,6 +340,10 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 		ImagePullPolicy: instance.Spec.Image.PullPolicy,
 		Env: []corev1.EnvVar{
 			{
+				Name: "KAPPNAV_CR_NAME",
+				Value: instance.Name,
+			},
+			{
 				Name:  "KAPPNAV_CONFIG_NAMESPACE",
 				Value: instance.Namespace,
 			},
@@ -404,10 +458,10 @@ func createUILiveinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 	return probe
 }
 
-func createUIVolumeMount() *corev1.VolumeMount {
+func createUIVolumeMount(instance *kappnavv1.Kappnav) *corev1.VolumeMount {
 	volumeMount := &corev1.VolumeMount{
 		MountPath: UIVolumeMountPath,
-		Name: UIVolumeName,
+		Name: instance.Name + "-" + UIVolumeName,
 	}
 	return volumeMount
 }

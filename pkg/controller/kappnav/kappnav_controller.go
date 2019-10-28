@@ -2,18 +2,23 @@ package kappnav
 
 import (
 	"context"
+	"io/ioutil"
 
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	kappnavutils "github.com/kappnav/operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 )
 
 var log = logf.Log.WithName("controller_kappnav")
@@ -31,7 +36,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(), 
+	return &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(),
 		mgr.GetScheme(), mgr.GetConfig(), mgr.GetRecorder("kappnav-operator"))}
 }
 
@@ -96,21 +101,176 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+
 	// Apply defaults to the Kappnav instance
 	kappnavutils.SetKappnavDefaults(instance)
+
+	// Dummy secret for Minikube support
+	dummySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.GetName() + "-" + kappnavutils.UIVolumeName,
+			Namespace: instance.GetNamespace(),
+		},
+	}
+
+	// The UI service
+	uiService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.GetName() + "-ui-service",
+			Namespace: instance.GetNamespace(),
+		},
+	}
+	uiServiceAnnotations := map[string]string{
+		"service.alpha.openshift.io/serving-cert-secret-name": dummySecret.Name,
+	}
+
+	// The UI ingress
+	uiIngress := &extensionsv1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.GetName() + "-ui-ingress",
+			Namespace: instance.GetNamespace(),
+		},
+	}
+
+	if instance.Spec.Env.KubeEnv == "minikube" {
+		// Create or update dummy secret
+		err = r.CreateOrUpdate(dummySecret, instance, func() error {
+			kappnavutils.CustomizeSecret(dummySecret, instance)
+			return nil
+		})
+		if err != nil {
+			reqLogger.Error(err, "Failed to reconcile the dummy secret")
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+		// Create or update the UI service
+		err = r.CreateOrUpdate(uiService, instance, func() error {
+			kappnavutils.CustomizeService(uiService, instance, uiServiceAnnotations)
+			serviceSpec := &uiService.Spec
+			serviceSpec.Type = corev1.ServiceTypeNodePort
+			if serviceSpec.Ports == nil || len(serviceSpec.Ports) == 0 {
+				serviceSpec.Ports = []corev1.ServicePort{
+					{
+						Port:       3000,
+						TargetPort: intstr.FromInt(3000),
+						Protocol: corev1.ProtocolTCP,
+						Name: "https",
+					},
+				}
+			}
+			serviceSpec.Selector = map[string]string {
+				"app.kubernetes.io/component" : instance.GetName() + "-ui",
+			}
+			return nil
+		})
+		if err != nil {
+			reqLogger.Error(err, "Failed to reconcile the UI service")
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+		// Create or update UI ingress
+		err = r.CreateOrUpdate(uiIngress, instance, func() error {
+			kappnavutils.CustomizeIngress(uiIngress, instance)
+			ingressSpec := &uiIngress.Spec
+			if ingressSpec.Rules == nil || len(ingressSpec.Rules) == 0 {
+				ingressSpec.Rules = []extensionsv1beta1.IngressRule{
+					{
+						IngressRuleValue: extensionsv1beta1.IngressRuleValue{
+							HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
+								Paths: []extensionsv1beta1.HTTPIngressPath{
+									{
+										Path: "/kappnav-ui",
+										Backend: extensionsv1beta1.IngressBackend{
+											ServiceName: uiService.GetName(),
+											ServicePort: intstr.FromInt(3000),
+										},
+									},
+									{
+										Path: "/kappnav",
+										Backend: extensionsv1beta1.IngressBackend{
+											ServiceName: uiService.GetName(),
+											ServicePort: intstr.FromInt(3000),
+										},
+									},
+								},
+							},
+						},
+					},
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			reqLogger.Error(err, "Failed to reconcile the UI ingress")
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+	} else {
+
+	}
+
+	// Create or update status config maps.
+	files, err := ioutil.ReadDir("maps/status")
+	for _, file := range files {
+		if !file.IsDir() {
+			fileName := "maps/status/" + file.Name()
+			// Read the file from the image.
+			fData, err := ioutil.ReadFile(fileName)
+			if err != nil {
+				reqLogger.Error(err, "Failed to read file: " + fileName)
+				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+			}
+			configMap := &corev1.ConfigMap{}
+			// Unmarshal the YAML into an object.
+			err = yaml.Unmarshal(fData, configMap)
+			if err != nil {
+				reqLogger.Error(err, "Failed to unmarshal YAML file: " + fileName)
+				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+			}
+			statusMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      configMap.GetName(),
+					Namespace: instance.GetNamespace(),
+				},
+			}
+			// Write the data to the map in the cluster.
+			err = r.CreateOrUpdate(statusMap, instance, func() error {
+				statusMap.Data = configMap.Data
+				return nil
+			})
+			if err != nil {
+				reqLogger.Error(err, "Failed to reconcile the " + configMap.GetName() + " ConfigMap")
+				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+			}
+		}
+	}
+
+	// Create or update kappnav-config
+	kappnavConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kappnav-config",
+			Namespace: instance.GetNamespace(),
+		},
+	}
+	err = r.CreateOrUpdate(kappnavConfig, instance, func() error {
+		kappnavutils.CustomizeKappnavConfigMap(kappnavConfig, instance)
+		return nil
+	})
+	if err != nil {
+		reqLogger.Error(err, "Failed to reconcile the kappnav-config ConfigMap")
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+	}
 
 	// Create or update the UI deployment
 	uiDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance.GetName() + "-ui",
+			Name:      instance.GetName() + "-ui",
 			Namespace: instance.GetNamespace(),
 		},
 	}
 	err = r.CreateOrUpdate(uiDeployment, instance, func() error {
 		kappnavutils.CustomizeDeployment(uiDeployment, instance)
 		kappnavutils.CustomizePodSpec(&uiDeployment.Spec.Template, 
+			&uiDeployment.ObjectMeta,
 			kappnavutils.CreateUIDeploymentContainers(instance),
-			kappnavutils.CreateUIVolumes(), instance)
+			kappnavutils.CreateUIVolumes(instance), instance)
 		return nil
 	})
 	if err != nil {
@@ -121,13 +281,14 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Create or update the Controller deployment
 	controllerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: instance.GetName() + "-controller",
+			Name:      instance.GetName() + "-controller",
 			Namespace: instance.GetNamespace(),
 		},
 	}
 	err = r.CreateOrUpdate(controllerDeployment, instance, func() error {
 		kappnavutils.CustomizeDeployment(controllerDeployment, instance)
-		kappnavutils.CustomizePodSpec(&controllerDeployment.Spec.Template, 
+		kappnavutils.CustomizePodSpec(&controllerDeployment.Spec.Template,
+			&controllerDeployment.ObjectMeta,
 			kappnavutils.CreateControllerDeploymentContainers(instance), nil, instance)
 		return nil
 	})
