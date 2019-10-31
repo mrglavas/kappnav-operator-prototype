@@ -1,14 +1,18 @@
 package kappnav
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
+	"os"
+	"text/template"
 
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	kappnavutils "github.com/kappnav/operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -36,8 +40,41 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(),
+	reconciler := &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(),
 		mgr.GetScheme(), mgr.GetConfig(), mgr.GetRecorder("kappnav-operator"))}
+		
+	// Create CRDs if they do not already exist.
+	files, err := ioutil.ReadDir("crds")
+	if err != nil {
+		log.Error(err, "Failed to read directory: crds")
+		os.Exit(1)
+	}
+	for _, file := range files {
+		if !file.IsDir() {
+			fileName := "crds/" + file.Name()
+			// Read the file from the image.
+			fData, err := ioutil.ReadFile(fileName)
+			if err != nil {
+				log.Error(err, "Failed to read file: " + fileName)
+				os.Exit(1)
+			}
+			crd := &apiextensionsv1beta1.CustomResourceDefinition{}
+			// Unmarshal the YAML into an object.
+			err = yaml.Unmarshal(fData, crd)
+			if err != nil {
+				log.Error(err, "Failed to unmarshal YAML file: " + fileName)
+				os.Exit(1)
+			}
+			// Create the CRD if it does not already exist.
+			err = reconciler.GetClient().Create(context.TODO(), crd)
+			if err != nil && !errors.IsAlreadyExists(err) {
+				log.Error(err, "Failed to create CRD: " + crd.GetName())
+				os.Exit(1)
+			}
+		}
+	}
+	
+	return reconciler
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -206,38 +243,57 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	}
 
-	// Create or update status config maps.
-	files, err := ioutil.ReadDir("maps/status")
-	for _, file := range files {
-		if !file.IsDir() {
-			fileName := "maps/status/" + file.Name()
-			// Read the file from the image.
-			fData, err := ioutil.ReadFile(fileName)
-			if err != nil {
-				reqLogger.Error(err, "Failed to read file: " + fileName)
-				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-			}
-			configMap := &corev1.ConfigMap{}
-			// Unmarshal the YAML into an object.
-			err = yaml.Unmarshal(fData, configMap)
-			if err != nil {
-				reqLogger.Error(err, "Failed to unmarshal YAML file: " + fileName)
-				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-			}
-			statusMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      configMap.GetName(),
-					Namespace: instance.GetNamespace(),
-				},
-			}
-			// Write the data to the map in the cluster.
-			err = r.CreateOrUpdate(statusMap, instance, func() error {
-				statusMap.Data = configMap.Data
-				return nil
-			})
-			if err != nil {
-				reqLogger.Error(err, "Failed to reconcile the " + configMap.GetName() + " ConfigMap")
-				return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+	// Create or update action and status config maps.
+	mapDirs := []string{"maps/action", "maps/status"}
+	for _, dir := range mapDirs {
+		files, err := ioutil.ReadDir(dir)
+		if err != nil {
+			reqLogger.Error(err, "Failed to read directory: " + dir)
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+		for _, file := range files {
+			if !file.IsDir() {
+				fileName := dir + "/" + file.Name()
+				// Read the file from the image.
+				fData, err := ioutil.ReadFile(fileName)
+				if err != nil {
+					reqLogger.Error(err, "Failed to read file: " + fileName)
+					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				}
+				// Parse the file into a template.
+				t, err := template.New(fileName).Parse(string(fData))
+				if err != nil {
+					reqLogger.Error(err, "Failed to parse template file: " + fileName)
+					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				}
+				var buf bytes.Buffer
+				err = t.Execute(&buf, instance)
+				if err != nil {
+					reqLogger.Error(err, "Failed to execute template: " + fileName)
+					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				}
+				configMap := &corev1.ConfigMap{}
+				// Unmarshal the YAML into an object.
+				err = yaml.Unmarshal(buf.Bytes(), configMap)
+				if err != nil {
+					reqLogger.Error(err, "Failed to unmarshal YAML file: " + fileName)
+					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				}
+				statusMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      configMap.GetName(),
+						Namespace: instance.GetNamespace(),
+					},
+				}
+				// Write the data to the map in the cluster.
+				err = r.CreateOrUpdate(statusMap, instance, func() error {
+					statusMap.Data = configMap.Data
+					return nil
+				})
+				if err != nil {
+					reqLogger.Error(err, "Failed to reconcile the " + configMap.GetName() + " ConfigMap")
+					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				}
 			}
 		}
 	}
