@@ -1,4 +1,16 @@
 # kappnav-operator-prototype
+
+## Pulling from GitHub
+
+After extracting the project, rename the base dir from `kappnav-operator-prototype` to `kappnav-operator`.
+
+Also run the following commands:
+
+1. chmod +x ./build/bin/entrypoint
+2. chmod +x ./build/bin/user_setup
+
+These are temporary workarounds.
+
 ## Building the kappnav operator
 
 This project was developed with Operator SDK v0.10.0.
