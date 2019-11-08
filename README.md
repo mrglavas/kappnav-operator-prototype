@@ -52,4 +52,4 @@ Additional action and status config maps should be added to the `deploy/maps/act
 
 ## Adding additional logic to the controller
 
-If you are adding additional logic for managing resources, provide an implemenation of the `NewKappnavExtension` function in the `utils/extensions.go` file which returns an instance of `KappnavExtension`.
+If you are adding additional logic for managing resources, provide an implemenation of the `NewKappnavExtension` function in the `utils/extensions.go` file that returns an instance of `KappnavExtension`.
