@@ -81,32 +81,6 @@ spec:
                 tag:
                   type: string
               type: object
-            appNavInit:
-              properties:
-                repository:
-                  type: string
-                resources:
-                  properties:
-                    enabled:
-                      type: boolean
-                    limits:
-                      properties:
-                        cpu:
-                          type: string
-                        memory:
-                          type: string
-                      type: object
-                    requests:
-                      properties:
-                        cpu:
-                          type: string
-                        memory:
-                          type: string
-                      type: object
-                  type: object
-                tag:
-                  type: string
-              type: object
             appNavUI:
               properties:
                 repository:
@@ -129,11 +103,6 @@ spec:
                         memory:
                           type: string
                       type: object
-                  type: object
-                service:
-                  properties:
-                    type:
-                      type: string
                   type: object
                 tag:
                   type: string
@@ -158,6 +127,34 @@ spec:
               properties:
                 kubeEnv:
                   type: string
+              type: object
+            extensionContainers:
+              additionalProperties:
+                properties:
+                  repository:
+                    type: string
+                  resources:
+                    properties:
+                      enabled:
+                        type: boolean
+                      limits:
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                      requests:
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                        type: object
+                    type: object
+                  tag:
+                    type: string
+                type: object
               type: object
             image:
               properties:

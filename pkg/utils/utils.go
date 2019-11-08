@@ -2,48 +2,49 @@ package utils
 
 import (
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+// KappnavExtension extends the reconciler to manage
+// additional resources and override default configuration.
+type KappnavExtension interface {
+	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav)
+	ReconcileAdditonalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
+}
 
 const (
 	// APIContainerName ...
-	APIContainerName string        = "kappnav-api"
+	APIContainerName string = "kappnav-api"
 	// UIContainerName ...
-	UIContainerName string         = "kappnav-ui"
+	UIContainerName string = "kappnav-ui"
 	// ControllerContainerName ...
 	ControllerContainerName string = "kappnav-controller"
-	// InitContainerName ...
-	InitContainerName string       = "kappnav-init"
-	// ServiceAccountName ...
-	ServiceAccountName string      = "kappnav-operator"
+	// ServiceAccountNameSuffix ...
+	ServiceAccountNameSuffix string = "sa"
 )
 
 const (
 	// DefaultAPIRepository ...
-	DefaultAPIRepository        kappnavv1.Repository = "kappnav/apis"
+	DefaultAPIRepository kappnavv1.Repository = "kappnav/apis"
 	// DefaultUIRepository ...
-	DefaultUIRepository         kappnavv1.Repository = "kappnav/ui"
+	DefaultUIRepository kappnavv1.Repository = "kappnav/ui"
 	// DefaultControllerRepository ...
 	DefaultControllerRepository kappnavv1.Repository = "kappnav/controller"
-	// DefaultInitRepository ...
-	DefaultInitRepository       kappnavv1.Repository = "kappnav/init"
 	// DefaultTag ...
-	DefaultTag                  kappnavv1.Tag        = "0.1.0"
-)
-
-const (
-	// ServiceTypeDefault ...
-	ServiceTypeDefault kappnavv1.ServiceType = "ClusterIP"
+	DefaultTag kappnavv1.Tag = "0.1.0"
 )
 
 const (
 	// CPUConstraintDefault ...
-	CPUConstraintDefault    string = "500m"
+	CPUConstraintDefault string = "500m"
 	// MemoryConstraintDefault ...
 	MemoryConstraintDefault string = "512Mi"
 )
@@ -79,6 +80,47 @@ func GetLabels(instance *kappnavv1.Kappnav, component *metav1.ObjectMeta) map[st
 	return labels
 }
 
+// CustomizeServiceAccount ...
+func CustomizeServiceAccount(sa *corev1.ServiceAccount, instance *kappnavv1.Kappnav) {
+	sa.Labels = GetLabels(instance, &sa.ObjectMeta)
+	imagePullSecrets := make([]corev1.LocalObjectReference, 1)
+	imagePullSecrets[0] = corev1.LocalObjectReference{
+		Name: "sa-" + sa.GetNamespace(),
+	}
+	pullSecrets := instance.Spec.Image.PullSecrets
+	if pullSecrets != nil && len(pullSecrets) != 0 {
+		for _, secretName := range pullSecrets {
+			imagePullSecrets = append(imagePullSecrets, corev1.LocalObjectReference{
+				Name: secretName,
+			})
+		}
+	}
+	sa.ImagePullSecrets = imagePullSecrets
+}
+
+// CustomizeClusterRoleBinding ...
+func CustomizeClusterRoleBinding(crb *rbacv1.ClusterRoleBinding,
+	sa *corev1.ServiceAccount, instance *kappnavv1.Kappnav) {
+	crb.Labels = GetLabels(instance, &crb.ObjectMeta)
+	crb.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.GetName(),
+			Namespace: sa.GetNamespace(),
+		},
+	}
+	crb.RoleRef = rbacv1.RoleRef{
+		Kind:     "ClusterRole",
+		Name:     "cluster-admin",
+		APIGroup: "rbac.authorization.k8s.io",
+	}
+}
+
+// CustomizeConfigMap ...
+func CustomizeConfigMap(configMap *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
+	configMap.Labels = GetLabels(instance, &configMap.ObjectMeta)
+}
+
 // CustomizeSecret ...
 func CustomizeSecret(secret *corev1.Secret, instance *kappnavv1.Kappnav) {
 	secret.Labels = GetLabels(instance, &secret.ObjectMeta)
@@ -90,9 +132,93 @@ func CustomizeService(service *corev1.Service, instance *kappnavv1.Kappnav, anno
 	service.Annotations = annotations
 }
 
+// CustomizeUIServiceSpec ...
+func CustomizeUIServiceSpec(serviceSpec *corev1.ServiceSpec, instance *kappnavv1.Kappnav) {
+	isMinikube := instance.Spec.Env.KubeEnv == "minikube"
+	oldType := serviceSpec.Type
+	if isMinikube {
+		serviceSpec.Type = corev1.ServiceTypeNodePort
+	} else {
+		serviceSpec.Type = ""
+	}
+	if oldType != serviceSpec.Type {
+		serviceSpec.Ports = nil
+	}
+	if serviceSpec.Ports == nil || len(serviceSpec.Ports) == 0 {
+		if isMinikube {
+			serviceSpec.Ports = []corev1.ServicePort{
+				{
+					Port:       3000,
+					TargetPort: intstr.FromInt(3000),
+					Protocol:   corev1.ProtocolTCP,
+					Name:       "https",
+				},
+			}
+		} else {
+			serviceSpec.Ports = []corev1.ServicePort{
+				{
+					Name:       "proxy",
+					Port:       443,
+					TargetPort: intstr.FromInt(8443),
+				},
+			}
+		}
+	}
+	serviceSpec.Selector = map[string]string{
+		"app.kubernetes.io/component": instance.GetName() + "-ui",
+	}
+}
+
 // CustomizeIngress ...
 func CustomizeIngress(ingress *extensionsv1beta1.Ingress, instance *kappnavv1.Kappnav) {
 	ingress.Labels = GetLabels(instance, &ingress.ObjectMeta)
+}
+
+// CustomizeUIIngressSpec ...
+func CustomizeUIIngressSpec(ingressSpec *extensionsv1beta1.IngressSpec,
+	uiService *corev1.Service, instance *kappnavv1.Kappnav) {
+	if ingressSpec.Rules == nil || len(ingressSpec.Rules) == 0 {
+		ingressSpec.Rules = []extensionsv1beta1.IngressRule{
+			{
+				IngressRuleValue: extensionsv1beta1.IngressRuleValue{
+					HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
+						Paths: []extensionsv1beta1.HTTPIngressPath{
+							{
+								Path: "/kappnav-ui",
+								Backend: extensionsv1beta1.IngressBackend{
+									ServiceName: uiService.GetName(),
+									ServicePort: intstr.FromInt(3000),
+								},
+							},
+							{
+								Path: "/kappnav",
+								Backend: extensionsv1beta1.IngressBackend{
+									ServiceName: uiService.GetName(),
+									ServicePort: intstr.FromInt(3000),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+}
+
+// CustomizeRoute ...
+func CustomizeRoute(route *routev1.Route, instance *kappnavv1.Kappnav) {
+	route.Labels = GetLabels(instance, &route.ObjectMeta)
+}
+
+// CustomizeUIRouteSpec ...
+func CustomizeUIRouteSpec(routeSpec *routev1.RouteSpec,
+	routeName *metav1.ObjectMeta, instance *kappnavv1.Kappnav) {
+	if routeSpec.TLS == nil {
+		routeSpec.TLS = &routev1.TLSConfig{}
+	}
+	routeSpec.TLS.Termination = routev1.TLSTerminationReencrypt
+	routeSpec.To.Kind = "Service"
+	routeSpec.To.Name = routeName.GetName()
 }
 
 // CustomizeDeployment ...
@@ -116,7 +242,7 @@ func CustomizePodSpec(pts *corev1.PodTemplateSpec, parentComponent *metav1.Objec
 	pts.Labels = GetLabels(instance, parentComponent)
 	pts.Spec.Containers = containers
 	pts.Spec.RestartPolicy = corev1.RestartPolicyAlways
-	pts.Spec.ServiceAccountName = ServiceAccountName
+	pts.Spec.ServiceAccountName = instance.GetName() + "-" + ServiceAccountNameSuffix
 	pts.Spec.Volumes = volumes
 	setPodSecurity(pts)
 }
@@ -128,9 +254,9 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 	}
 	value, _ := kappnavConfig.Data["status-color-mapping"]
 	if len(value) == 0 {
-		kappnavConfig.Data["status-color-mapping"] = 
-		"{ \"values\": { \"Normal\": \"GREEN\", \"Warning\": \"YELLOW\", \"Problem\": \"RED\", \"Unknown\": \"GREY\"}," +
-		  "\"colors\": { \"GREEN\":  \"#5aa700\", \"YELLOW\": \"#B4B017\", \"RED\": \"#A74343\", \"GREY\" : \"#808080\"} }"
+		kappnavConfig.Data["status-color-mapping"] =
+			"{ \"values\": { \"Normal\": \"GREEN\", \"Warning\": \"YELLOW\", \"Problem\": \"RED\", \"Unknown\": \"GREY\"}," +
+				"\"colors\": { \"GREEN\":  \"#5aa700\", \"YELLOW\": \"#B4B017\", \"RED\": \"#A74343\", \"GREY\" : \"#808080\"} }"
 	}
 	value, _ = kappnavConfig.Data["app-status-precedence"]
 	if len(value) == 0 {
@@ -140,7 +266,7 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 	if len(value) == 0 {
 		kappnavConfig.Data["status-unknown"] = "Unknown"
 	}
-	kappnavConfig.Data["kappnav-sa-name"] = ServiceAccountName
+	kappnavConfig.Data["kappnav-sa-name"] = instance.GetName() + "-" + ServiceAccountNameSuffix
 	if instance.Spec.Console.EnableOkdFeaturedApp {
 		kappnavConfig.Data["okd-console-featured-app"] = "enabled"
 	} else {
@@ -156,9 +282,9 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 // CreateUIDeploymentContainers ...
 func CreateUIDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.Container {
 	return []corev1.Container{
-		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, 
+		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI,
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
-		*createContainer(UIContainerName, instance, &instance.Spec.AppNavUI.KappnavContainerConfiguration, 
+		*createContainer(UIContainerName, instance, instance.Spec.AppNavUI,
 			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount(instance)),
 	}
 }
@@ -168,7 +294,7 @@ func CreateControllerDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.
 	return []corev1.Container{
 		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI,
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
-		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController, 
+		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController,
 			createControllerReadinessProbe(), createControllerLivenessProbe(), nil),
 	}
 }
@@ -189,11 +315,13 @@ func CreateUIVolumes(instance *kappnavv1.Kappnav) []corev1.Volume {
 }
 
 // SetKappnavDefaults sets default values on the CR instance
-func SetKappnavDefaults(instance *kappnavv1.Kappnav) {
+func SetKappnavDefaults(instance *kappnavv1.Kappnav, extension KappnavExtension) {
+	if extension != nil {
+		extension.ApplyAdditionalDefaults(instance)
+	}
 	setAPIContainerDefaults(instance)
 	setUIContainerDefaults(instance)
 	setControllerContainerDefaults(instance)
-	setInitContainerDefaults(instance)
 	setImageDefaults(instance)
 	setEnvironmentDefaults(instance)
 	setArchitectureDefaults(instance)
@@ -212,16 +340,10 @@ func setAPIContainerDefaults(instance *kappnavv1.Kappnav) {
 func setUIContainerDefaults(instance *kappnavv1.Kappnav) {
 	uiConfig := instance.Spec.AppNavUI
 	if uiConfig == nil {
-		uiConfig = &kappnavv1.KappnavServiceContainerConfiguration{}
+		uiConfig = &kappnavv1.KappnavContainerConfiguration{}
 		instance.Spec.AppNavUI = uiConfig
 	}
-	setContainerDefaults(&uiConfig.KappnavContainerConfiguration, DefaultUIRepository)
-	if uiConfig.Service == nil {
-		uiConfig.Service = &kappnavv1.Service{}
-	}
-	if len(uiConfig.Service.Type) == 0 {
-		uiConfig.Service.Type = ServiceTypeDefault
-	}
+	setContainerDefaults(uiConfig, DefaultUIRepository)
 }
 
 func setControllerContainerDefaults(instance *kappnavv1.Kappnav) {
@@ -231,15 +353,6 @@ func setControllerContainerDefaults(instance *kappnavv1.Kappnav) {
 		instance.Spec.AppNavController = controllerConfig
 	}
 	setContainerDefaults(controllerConfig, DefaultControllerRepository)
-}
-
-func setInitContainerDefaults(instance *kappnavv1.Kappnav) {
-	initConfig := instance.Spec.AppNavInit
-	if initConfig == nil {
-		initConfig = &kappnavv1.KappnavContainerConfiguration{}
-		instance.Spec.AppNavInit = initConfig
-	}
-	setContainerDefaults(initConfig, DefaultInitRepository)
 }
 
 func setContainerDefaults(containerConfig *kappnavv1.KappnavContainerConfiguration, defaultRepoName kappnavv1.Repository) {
@@ -322,8 +435,8 @@ func setConsoleDefaults(instance *kappnavv1.Kappnav) {
 	console := instance.Spec.Console
 	if console == nil {
 		console = &kappnavv1.KappnavConsoleConfiguration{
-			EnableOkdFeaturedApp: true, 
-			EnableOkdLauncher: true,
+			EnableOkdFeaturedApp: true,
+			EnableOkdLauncher:    true,
 		}
 		instance.Spec.Console = console
 	}
@@ -340,7 +453,7 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 		ImagePullPolicy: instance.Spec.Image.PullPolicy,
 		Env: []corev1.EnvVar{
 			{
-				Name: "KAPPNAV_CR_NAME",
+				Name:  "KAPPNAV_CR_NAME",
 				Value: instance.Name,
 			},
 			{
@@ -418,8 +531,8 @@ func createAPIReadinessProbe() *corev1.Probe {
 			},
 		},
 		InitialDelaySeconds: 60,
-		PeriodSeconds: 15,
-		FailureThreshold: 6,
+		PeriodSeconds:       15,
+		FailureThreshold:    6,
 	}
 }
 
@@ -446,8 +559,8 @@ func createUIReadinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 			},
 		},
 		InitialDelaySeconds: 20,
-		PeriodSeconds: 10,
-		FailureThreshold: 6,
+		PeriodSeconds:       10,
+		FailureThreshold:    6,
 	}
 }
 
@@ -461,7 +574,7 @@ func createUILiveinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 func createUIVolumeMount(instance *kappnavv1.Kappnav) *corev1.VolumeMount {
 	volumeMount := &corev1.VolumeMount{
 		MountPath: UIVolumeMountPath,
-		Name: instance.Name + "-" + UIVolumeName,
+		Name:      instance.Name + "-" + UIVolumeName,
 	}
 	return volumeMount
 }
@@ -478,8 +591,8 @@ func createControllerReadinessProbe() *corev1.Probe {
 			},
 		},
 		InitialDelaySeconds: 30,
-		PeriodSeconds: 5,
-		FailureThreshold: 6,
+		PeriodSeconds:       5,
+		FailureThreshold:    6,
 	}
 }
 

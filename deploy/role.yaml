@@ -24,6 +24,14 @@ rules:
   verbs:
   - create
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  verbs:
+  - get
+  - create
+  - update
+- apiGroups:
   - apps
   resources:
   - deployments

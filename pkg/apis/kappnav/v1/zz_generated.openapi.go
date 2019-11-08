@@ -78,12 +78,19 @@ func schema_pkg_apis_kappnav_v1_KappnavSpec(ref common.ReferenceCallback) common
 					},
 					"appNavUI": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("./pkg/apis/kappnav/v1.KappnavServiceContainerConfiguration"),
+							Ref: ref("./pkg/apis/kappnav/v1.KappnavContainerConfiguration"),
 						},
 					},
-					"appNavInit": {
+					"extensionContainers": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("./pkg/apis/kappnav/v1.KappnavContainerConfiguration"),
+							Type: []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/kappnav/v1.KappnavContainerConfiguration"),
+									},
+								},
+							},
 						},
 					},
 					"image": {
@@ -110,7 +117,7 @@ func schema_pkg_apis_kappnav_v1_KappnavSpec(ref common.ReferenceCallback) common
 			},
 		},
 		Dependencies: []string{
-			"./pkg/apis/kappnav/v1.Architecture", "./pkg/apis/kappnav/v1.Environment", "./pkg/apis/kappnav/v1.KappnavConsoleConfiguration", "./pkg/apis/kappnav/v1.KappnavContainerConfiguration", "./pkg/apis/kappnav/v1.KappnavImageConfiguration", "./pkg/apis/kappnav/v1.KappnavServiceContainerConfiguration"},
+			"./pkg/apis/kappnav/v1.Architecture", "./pkg/apis/kappnav/v1.Environment", "./pkg/apis/kappnav/v1.KappnavConsoleConfiguration", "./pkg/apis/kappnav/v1.KappnavContainerConfiguration", "./pkg/apis/kappnav/v1.KappnavImageConfiguration"},
 	}
 }
 

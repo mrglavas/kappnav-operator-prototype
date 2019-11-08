@@ -1,7 +1,7 @@
 apiVersion: kappnav.io/v1
 kind: Kappnav
 metadata:
-  name: example-kappnav
+  name: kappnav
 spec:
 
   ###############################################################################
@@ -10,7 +10,7 @@ spec:
 
   appNavAPI:
     repository: kappnav/apis
-    tag: 0.1.0
+    tag: 0.1.1
     resources:
       enabled: false
       requests:
@@ -26,7 +26,7 @@ spec:
 
   appNavController:
     repository: kappnav/controller
-    tag: 0.1.0
+    tag: 0.1.1
     resources:
       enabled: false
       requests:
@@ -42,26 +42,7 @@ spec:
 
   appNavUI:
     repository: kappnav/ui
-    tag: 0.1.0
-    service:
-      type: ClusterIP
-    resources:
-      enabled: false
-      requests:
-        cpu: 500m
-        memory: 512Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
-
-
-  ###############################################################################
-  ## kAppNav Init Container variables
-  ###############################################################################
-
-  appNavInit:
-    repository: kappnav/init
-    tag: 0.1.0
+    tag: 0.1.1
     resources:
       enabled: false
       requests:

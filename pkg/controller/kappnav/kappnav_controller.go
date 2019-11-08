@@ -5,17 +5,18 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
+	"strings"
 	"text/template"
 
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	kappnavutils "github.com/kappnav/operator/pkg/utils"
+	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -23,6 +24,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/yaml"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 var log = logf.Log.WithName("controller_kappnav")
@@ -42,7 +44,7 @@ func Add(mgr manager.Manager) error {
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	reconciler := &ReconcileKappnav{ReconcilerBase: kappnavutils.NewReconcilerBase(mgr.GetClient(),
 		mgr.GetScheme(), mgr.GetConfig(), mgr.GetRecorder("kappnav-operator"))}
-		
+
 	// Create CRDs if they do not already exist.
 	files, err := ioutil.ReadDir("crds")
 	if err != nil {
@@ -52,28 +54,30 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	for _, file := range files {
 		if !file.IsDir() {
 			fileName := "crds/" + file.Name()
-			// Read the file from the image.
-			fData, err := ioutil.ReadFile(fileName)
-			if err != nil {
-				log.Error(err, "Failed to read file: " + fileName)
-				os.Exit(1)
-			}
-			crd := &apiextensionsv1beta1.CustomResourceDefinition{}
-			// Unmarshal the YAML into an object.
-			err = yaml.Unmarshal(fData, crd)
-			if err != nil {
-				log.Error(err, "Failed to unmarshal YAML file: " + fileName)
-				os.Exit(1)
-			}
-			// Create the CRD if it does not already exist.
-			err = reconciler.GetClient().Create(context.TODO(), crd)
-			if err != nil && !errors.IsAlreadyExists(err) {
-				log.Error(err, "Failed to create CRD: " + crd.GetName())
-				os.Exit(1)
+			if strings.HasSuffix(fileName, ".yaml") || strings.HasSuffix(fileName, ".yml") {
+				// Read the file from the image.
+				fData, err := ioutil.ReadFile(fileName)
+				if err != nil {
+					log.Error(err, "Failed to read file: "+fileName)
+					os.Exit(1)
+				}
+				crd := &apiextensionsv1beta1.CustomResourceDefinition{}
+				// Unmarshal the YAML into an object.
+				err = yaml.Unmarshal(fData, crd)
+				if err != nil {
+					log.Error(err, "Failed to unmarshal YAML file: "+fileName)
+					os.Exit(1)
+				}
+				// Create the CRD if it does not already exist.
+				err = reconciler.GetClient().Create(context.TODO(), crd)
+				if err != nil && !errors.IsAlreadyExists(err) {
+					log.Error(err, "Failed to create CRD: "+crd.GetName())
+					os.Exit(1)
+				}
 			}
 		}
 	}
-	
+
 	return reconciler
 }
 
@@ -91,9 +95,17 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Deployment and requeue the owner Kappnav
 	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &kappnavv1.Kappnav{},
+	})
+	if err != nil {
+		return err
+	}
+
+	// Watch for changes to secondary resource ConfigMap and requeue the owner Kappnav
+	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &kappnavv1.Kappnav{},
 	})
@@ -139,8 +151,43 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
+	// Call factory method to create new KappnavExtension
+	extension := kappnavutils.NewKappnavExtension()
+
 	// Apply defaults to the Kappnav instance
-	kappnavutils.SetKappnavDefaults(instance)
+	kappnavutils.SetKappnavDefaults(instance, extension)
+
+	// Create or update service account
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.GetName() + "-" + kappnavutils.ServiceAccountNameSuffix,
+			Namespace: instance.GetNamespace(),
+		},
+	}
+	err = r.CreateOrUpdate(serviceAccount, instance, func() error {
+		kappnavutils.CustomizeServiceAccount(serviceAccount, instance)
+		return nil
+	})
+	if err != nil {
+		reqLogger.Error(err, "Failed to reconcile the ServiceAccount")
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+	}
+
+	// Create or update cluster role binding
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.GetName() + "-crb",
+			Namespace: instance.GetNamespace(),
+		},
+	}
+	err = r.CreateOrUpdate(crb, instance, func() error {
+		kappnavutils.CustomizeClusterRoleBinding(crb, serviceAccount, instance)
+		return nil
+	})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		reqLogger.Error(err, "Failed to reconcile the ClusterRoleBinding")
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+	}
 
 	// Dummy secret for Minikube support
 	dummySecret := &corev1.Secret{
@@ -150,15 +197,22 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 
+	uiServiceAndRouteName := &metav1.ObjectMeta{
+		Name:      instance.GetName() + "-ui-service",
+		Namespace: instance.GetNamespace(),
+	}
+
 	// The UI service
 	uiService := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.GetName() + "-ui-service",
-			Namespace: instance.GetNamespace(),
-		},
+		ObjectMeta: *uiServiceAndRouteName,
 	}
 	uiServiceAnnotations := map[string]string{
 		"service.alpha.openshift.io/serving-cert-secret-name": dummySecret.Name,
+	}
+
+	// The UI route
+	uiRoute := &routev1.Route{
+		ObjectMeta: *uiServiceAndRouteName,
 	}
 
 	// The UI ingress
@@ -169,7 +223,8 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 
-	if instance.Spec.Env.KubeEnv == "minikube" {
+	isMinikube := instance.Spec.Env.KubeEnv == "minikube"
+	if isMinikube {
 		// Create or update dummy secret
 		err = r.CreateOrUpdate(dummySecret, instance, func() error {
 			kappnavutils.CustomizeSecret(dummySecret, instance)
@@ -182,21 +237,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		// Create or update the UI service
 		err = r.CreateOrUpdate(uiService, instance, func() error {
 			kappnavutils.CustomizeService(uiService, instance, uiServiceAnnotations)
-			serviceSpec := &uiService.Spec
-			serviceSpec.Type = corev1.ServiceTypeNodePort
-			if serviceSpec.Ports == nil || len(serviceSpec.Ports) == 0 {
-				serviceSpec.Ports = []corev1.ServicePort{
-					{
-						Port:       3000,
-						TargetPort: intstr.FromInt(3000),
-						Protocol: corev1.ProtocolTCP,
-						Name: "https",
-					},
-				}
-			}
-			serviceSpec.Selector = map[string]string {
-				"app.kubernetes.io/component" : instance.GetName() + "-ui",
-			}
+			kappnavutils.CustomizeUIServiceSpec(&uiService.Spec, instance)
 			return nil
 		})
 		if err != nil {
@@ -206,33 +247,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		// Create or update UI ingress
 		err = r.CreateOrUpdate(uiIngress, instance, func() error {
 			kappnavutils.CustomizeIngress(uiIngress, instance)
-			ingressSpec := &uiIngress.Spec
-			if ingressSpec.Rules == nil || len(ingressSpec.Rules) == 0 {
-				ingressSpec.Rules = []extensionsv1beta1.IngressRule{
-					{
-						IngressRuleValue: extensionsv1beta1.IngressRuleValue{
-							HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
-								Paths: []extensionsv1beta1.HTTPIngressPath{
-									{
-										Path: "/kappnav-ui",
-										Backend: extensionsv1beta1.IngressBackend{
-											ServiceName: uiService.GetName(),
-											ServicePort: intstr.FromInt(3000),
-										},
-									},
-									{
-										Path: "/kappnav",
-										Backend: extensionsv1beta1.IngressBackend{
-											ServiceName: uiService.GetName(),
-											ServicePort: intstr.FromInt(3000),
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-			}
+			kappnavutils.CustomizeUIIngressSpec(&uiIngress.Spec, uiService, instance)
 			return nil
 		})
 		if err != nil {
@@ -240,7 +255,26 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 		}
 	} else {
-
+		// Create or update the UI service
+		err = r.CreateOrUpdate(uiService, instance, func() error {
+			kappnavutils.CustomizeService(uiService, instance, uiServiceAnnotations)
+			kappnavutils.CustomizeUIServiceSpec(&uiService.Spec, instance)
+			return nil
+		})
+		if err != nil {
+			reqLogger.Error(err, "Failed to reconcile the UI service")
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+		// Create or update UI route
+		err = r.CreateOrUpdate(uiRoute, instance, func() error {
+			kappnavutils.CustomizeRoute(uiRoute, instance)
+			kappnavutils.CustomizeUIRouteSpec(&uiRoute.Spec, uiServiceAndRouteName, instance)
+			return nil
+		})
+		if err != nil {
+			reqLogger.Error(err, "Failed to reconcile the UI route")
+			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
 	}
 
 	// Create or update action and status config maps.
@@ -248,51 +282,57 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	for _, dir := range mapDirs {
 		files, err := ioutil.ReadDir(dir)
 		if err != nil {
-			reqLogger.Error(err, "Failed to read directory: " + dir)
+			reqLogger.Error(err, "Failed to read directory: "+dir)
 			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 		}
 		for _, file := range files {
 			if !file.IsDir() {
 				fileName := dir + "/" + file.Name()
-				// Read the file from the image.
-				fData, err := ioutil.ReadFile(fileName)
-				if err != nil {
-					reqLogger.Error(err, "Failed to read file: " + fileName)
-					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-				}
-				// Parse the file into a template.
-				t, err := template.New(fileName).Parse(string(fData))
-				if err != nil {
-					reqLogger.Error(err, "Failed to parse template file: " + fileName)
-					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-				}
-				var buf bytes.Buffer
-				err = t.Execute(&buf, instance)
-				if err != nil {
-					reqLogger.Error(err, "Failed to execute template: " + fileName)
-					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-				}
-				configMap := &corev1.ConfigMap{}
-				// Unmarshal the YAML into an object.
-				err = yaml.Unmarshal(buf.Bytes(), configMap)
-				if err != nil {
-					reqLogger.Error(err, "Failed to unmarshal YAML file: " + fileName)
-					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
-				}
-				statusMap := &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      configMap.GetName(),
-						Namespace: instance.GetNamespace(),
-					},
-				}
-				// Write the data to the map in the cluster.
-				err = r.CreateOrUpdate(statusMap, instance, func() error {
-					statusMap.Data = configMap.Data
-					return nil
-				})
-				if err != nil {
-					reqLogger.Error(err, "Failed to reconcile the " + configMap.GetName() + " ConfigMap")
-					return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+				if strings.HasSuffix(fileName, ".yaml") || strings.HasSuffix(fileName, ".yml") {
+					// Read the file from the image.
+					fData, err := ioutil.ReadFile(fileName)
+					if err != nil {
+						reqLogger.Error(err, "Failed to read file: "+fileName)
+						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+					}
+					// Parse the file into a template.
+					t, err := template.New(fileName).Parse(string(fData))
+					if err != nil {
+						reqLogger.Error(err, "Failed to parse template file: "+fileName)
+						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+					}
+					var buf bytes.Buffer
+					err = t.Execute(&buf, instance)
+					if err != nil {
+						reqLogger.Error(err, "Failed to execute template: "+fileName)
+						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+					}
+					configMap := &corev1.ConfigMap{}
+					// Unmarshal the YAML into an object.
+					err = yaml.Unmarshal(buf.Bytes(), configMap)
+					if err != nil {
+						reqLogger.Error(err, "Failed to unmarshal YAML file: "+fileName)
+						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+					}
+					statusMap := &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      configMap.GetName(),
+							Namespace: instance.GetNamespace(),
+						},
+					}
+					// Write the data to the map in the cluster.
+					err = r.CreateOrUpdate(statusMap, instance, func() error {
+						kappnavutils.CustomizeConfigMap(statusMap, instance)
+						// Write the data section if it doesn't exist or is empty.
+						if statusMap.Data == nil || len(statusMap.Data) == 0 {
+							statusMap.Data = configMap.Data
+						}
+						return nil
+					})
+					if err != nil {
+						reqLogger.Error(err, "Failed to reconcile the "+configMap.GetName()+" ConfigMap")
+						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+					}
 				}
 			}
 		}
@@ -306,6 +346,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 	err = r.CreateOrUpdate(kappnavConfig, instance, func() error {
+		kappnavutils.CustomizeConfigMap(kappnavConfig, instance)
 		kappnavutils.CustomizeKappnavConfigMap(kappnavConfig, instance)
 		return nil
 	})
@@ -323,7 +364,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 	err = r.CreateOrUpdate(uiDeployment, instance, func() error {
 		kappnavutils.CustomizeDeployment(uiDeployment, instance)
-		kappnavutils.CustomizePodSpec(&uiDeployment.Spec.Template, 
+		kappnavutils.CustomizePodSpec(&uiDeployment.Spec.Template,
 			&uiDeployment.ObjectMeta,
 			kappnavutils.CreateUIDeploymentContainers(instance),
 			kappnavutils.CreateUIVolumes(instance), instance)
@@ -353,5 +394,9 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 	}
 
+	// If an extension exists call its reconcile function, otherwise return success.
+	if extension != nil {
+		return extension.ReconcileAdditonalResources(request, instance)
+	}
 	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 }

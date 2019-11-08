@@ -11,14 +11,14 @@ import (
 // KappnavSpec defines the desired state of Kappnav
 // +k8s:openapi-gen=true
 type KappnavSpec struct {
-	AppNavAPI        *KappnavContainerConfiguration        `json:"appNavAPI,omitempty"`
-	AppNavController *KappnavContainerConfiguration        `json:"appNavController,omitempty"`
-	AppNavUI         *KappnavServiceContainerConfiguration `json:"appNavUI,omitempty"`
-	AppNavInit       *KappnavContainerConfiguration        `json:"appNavInit,omitempty"`
-	Image            *KappnavImageConfiguration            `json:"image,omitempty"`
-	Env              *Environment                          `json:"env,omitempty"`
-	Arch             *Architecture                         `json:"arch,omitempty"`
-	Console          *KappnavConsoleConfiguration          `json:"console,omitempty"`
+	AppNavAPI           *KappnavContainerConfiguration            `json:"appNavAPI,omitempty"`
+	AppNavController    *KappnavContainerConfiguration            `json:"appNavController,omitempty"`
+	AppNavUI            *KappnavContainerConfiguration            `json:"appNavUI,omitempty"`
+	ExtensionContainers map[string]*KappnavContainerConfiguration `json:"extensionContainers,omitempty"`
+	Image               *KappnavImageConfiguration                `json:"image,omitempty"`
+	Env                 *Environment                              `json:"env,omitempty"`
+	Arch                *Architecture                             `json:"arch,omitempty"`
+	Console             *KappnavConsoleConfiguration              `json:"console,omitempty"`
 }
 
 // KappnavContainerConfiguration defines the configuration for a Kappnav container
@@ -47,20 +47,6 @@ type Repository string
 // Tag ...
 type Tag string
 
-// KappnavServiceContainerConfiguration defines the configuration for a Kappnav container with a service
-type KappnavServiceContainerConfiguration struct {
-	KappnavContainerConfiguration `json:",inline"`
-	Service *Service              `json:"service,omitempty"`
-}
-
-// Service ...
-type Service struct {
-	Type ServiceType `json:"type,omitempty"`
-}
-
-// ServiceType ...
-type ServiceType string
-
 // KappnavImageConfiguration ...
 type KappnavImageConfiguration struct {
 	PullPolicy  corev1.PullPolicy `json:"pullPolicy,omitempty"`
@@ -81,15 +67,16 @@ type Architecture struct {
 
 // SchedulingWeight ...
 type SchedulingWeight string
-const(
+
+const (
 	// DoNotUse ...
-	DoNotUse       SchedulingWeight = "0 - Do not use"
+	DoNotUse SchedulingWeight = "0 - Do not use"
 	// LeastPreferred ...
 	LeastPreferred SchedulingWeight = "1 - Least preferred"
 	// NoPreference ...
-	NoPreference   SchedulingWeight = "2 - No preference"
+	NoPreference SchedulingWeight = "2 - No preference"
 	// MostPreferred ...
-	MostPreferred  SchedulingWeight = "3 - Most preferred"
+	MostPreferred SchedulingWeight = "3 - Most preferred"
 )
 
 // KappnavConsoleConfiguration is configuration for the OpenShift web console.
