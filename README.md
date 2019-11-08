@@ -11,8 +11,8 @@ Prerequisites for the Operator SDK are listed here: https://github.com/operator-
 
 If you ever change the structs for the Kappnav CRD (located in kappnav_types.go) be sure to run:
 
-`operator-sdk generate k8s
-operator-sdk generate openapi`
+`operator-sdk generate k8s`
+`operator-sdk generate openapi`
 
 This regenerates the CRD and the code that allows a Kappnav CR to be accessed programatically through the k8s APIs.
 
@@ -24,23 +24,23 @@ To build the project run:
 
 To install the operator run:
 
-`kubectl create -f deploy/crds/kappnav_v1_kappnav_crd.yaml
-kubectl create -f deploy/crds/kappnav_v1_kappnav_cr.yaml
-kubectl create -f deploy/service_account.yaml
-kubectl create -f deploy/role.yaml
-kubectl create -f deploy/role_binding.yaml
-kubectl create -f deploy/operator.yaml`
+`kubectl create -f deploy/crds/kappnav_v1_kappnav_crd.yaml`
+`kubectl create -f deploy/crds/kappnav_v1_kappnav_cr.yaml`
+`kubectl create -f deploy/service_account.yaml`
+`kubectl create -f deploy/role.yaml`
+`kubectl create -f deploy/role_binding.yaml`
+`kubectl create -f deploy/operator.yaml`
 
 ## Uninstalling the kappnav operator
 
 To uninstall the operator run:
 
-`kubectl delete -f deploy/crds/kappnav_v1_kappnav_crd.yaml
-kubectl delete -f deploy/crds/kappnav_v1_kappnav_cr.yaml
-kubectl delete -f deploy/service_account.yaml
-kubectl delete -f deploy/role.yaml
-kubectl delete -f deploy/role_binding.yaml
-kubectl delete -f deploy/operator.yaml`
+`kubectl delete -f deploy/crds/kappnav_v1_kappnav_crd.yaml`
+`kubectl delete -f deploy/crds/kappnav_v1_kappnav_cr.yaml`
+`kubectl delete -f deploy/service_account.yaml`
+`kubectl delete -f deploy/role.yaml`
+`kubectl delete -f deploy/role_binding.yaml`
+`kubectl delete -f deploy/operator.yaml`
 
 ## Adding additional CRDs to the operator
 
