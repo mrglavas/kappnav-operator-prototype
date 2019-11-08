@@ -43,7 +43,7 @@ To install the operator run:
 5. kubectl create -f deploy/role_binding.yaml
 6. kubectl create -f deploy/operator.yaml
 
-Modify `kappnav_v1_kappnav_cr.yaml` for your Kube environment.
+Note: You should modify `kappnav_v1_kappnav_cr.yaml` for your Kube environment.
 
 ## Uninstalling the kappnav operator
 
