@@ -48,4 +48,8 @@ Additional CRDs can be added to the `deploy/crds/extensions` folder. These will 
 
 ## Adding additional status and action config maps to the operator
 
-Additional action and status config maps should be added to the `deploy/maps/action` and `deploy/maps/status` folder. This supports the same templating language that is used in Helm charts. Variables are addressed by their field names in the Kappnav structs. For instance, the kubeEnv field from the CR would be addressed as `.Spec.Env.KubeEnv`
+Additional action and status config maps should be added to the `deploy/maps/action` and `deploy/maps/status` folder. This supports the same templating language that is used in Helm charts. Variables are addressed by their field names in the Kappnav structs. For instance, the kubeEnv field from the CR would be addressed as `.Spec.Env.KubeEnv`. Action and status config maps will be initially created when a CR is installed.
+
+## Adding additional logic to the controller
+
+If you are adding additional logic for managing resources, provide an implemenation of the `NewKappnavExtension` function in the `utils/extensions.go` file which returns an instance of `KappnavExtension`.
