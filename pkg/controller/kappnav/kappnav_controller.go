@@ -210,20 +210,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		"service.alpha.openshift.io/serving-cert-secret-name": dummySecret.Name,
 	}
 
-	// The UI route
-	uiRoute := &routev1.Route{
-		ObjectMeta: *uiServiceAndRouteName,
-	}
-
-	// The UI ingress
-	uiIngress := &extensionsv1beta1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.GetName() + "-ui-ingress",
-			Namespace: instance.GetNamespace(),
-		},
-	}
-
-	isMinikube := instance.Spec.Env.KubeEnv == "minikube"
+	isMinikube := instance.Spec.Env.KubeEnv == "minikube" || instance.Spec.Env.KubeEnv == "k8s"
 	if isMinikube {
 		// Create or update dummy secret
 		err = r.CreateOrUpdate(dummySecret, instance, func() error {
@@ -245,6 +232,12 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 		}
 		// Create or update UI ingress
+		uiIngress := &extensionsv1beta1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      instance.GetName() + "-ui-ingress",
+				Namespace: instance.GetNamespace(),
+			},
+		}
 		err = r.CreateOrUpdate(uiIngress, instance, func() error {
 			kappnavutils.CustomizeIngress(uiIngress, instance)
 			kappnavutils.CustomizeUIIngressSpec(&uiIngress.Spec, uiService, instance)
@@ -266,6 +259,9 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 		}
 		// Create or update UI route
+		uiRoute := &routev1.Route{
+			ObjectMeta: *uiServiceAndRouteName,
+		}
 		err = r.CreateOrUpdate(uiRoute, instance, func() error {
 			kappnavutils.CustomizeRoute(uiRoute, instance)
 			kappnavutils.CustomizeUIRouteSpec(&uiRoute.Spec, uiServiceAndRouteName, instance)
@@ -314,18 +310,18 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 						reqLogger.Error(err, "Failed to unmarshal YAML file: "+fileName)
 						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 					}
-					statusMap := &corev1.ConfigMap{
+					actionOrStatusMap := &corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      configMap.GetName(),
 							Namespace: instance.GetNamespace(),
 						},
 					}
 					// Write the data to the map in the cluster.
-					err = r.CreateOrUpdate(statusMap, instance, func() error {
-						kappnavutils.CustomizeConfigMap(statusMap, instance)
+					err = r.CreateOrUpdate(actionOrStatusMap, instance, func() error {
+						kappnavutils.CustomizeConfigMap(actionOrStatusMap, instance)
 						// Write the data section if it doesn't exist or is empty.
-						if statusMap.Data == nil || len(statusMap.Data) == 0 {
-							statusMap.Data = configMap.Data
+						if actionOrStatusMap.Data == nil || len(actionOrStatusMap.Data) == 0 {
+							actionOrStatusMap.Data = configMap.Data
 						}
 						return nil
 					})
@@ -363,10 +359,10 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 	err = r.CreateOrUpdate(uiDeployment, instance, func() error {
+		pts := &uiDeployment.Spec.Template
 		kappnavutils.CustomizeDeployment(uiDeployment, instance)
-		kappnavutils.CustomizePodSpec(&uiDeployment.Spec.Template,
-			&uiDeployment.ObjectMeta,
-			kappnavutils.CreateUIDeploymentContainers(instance),
+		kappnavutils.CustomizePodSpec(pts, &uiDeployment.ObjectMeta,
+			kappnavutils.CreateUIDeploymentContainers(pts.Spec.Containers, instance),
 			kappnavutils.CreateUIVolumes(instance), instance)
 		return nil
 	})
@@ -383,10 +379,10 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 	err = r.CreateOrUpdate(controllerDeployment, instance, func() error {
+		pts := &controllerDeployment.Spec.Template
 		kappnavutils.CustomizeDeployment(controllerDeployment, instance)
-		kappnavutils.CustomizePodSpec(&controllerDeployment.Spec.Template,
-			&controllerDeployment.ObjectMeta,
-			kappnavutils.CreateControllerDeploymentContainers(instance), nil, instance)
+		kappnavutils.CustomizePodSpec(pts, &controllerDeployment.ObjectMeta,
+			kappnavutils.CreateControllerDeploymentContainers(pts.Spec.Containers, instance), nil, instance)
 		return nil
 	})
 	if err != nil {
@@ -396,7 +392,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// If an extension exists call its reconcile function, otherwise return success.
 	if extension != nil {
-		return extension.ReconcileAdditonalResources(request, instance)
+		return extension.ReconcileAdditionalResources(request, instance)
 	}
 	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 }

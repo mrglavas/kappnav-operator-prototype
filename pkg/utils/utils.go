@@ -17,7 +17,7 @@ import (
 // additional resources and override default configuration.
 type KappnavExtension interface {
 	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav)
-	ReconcileAdditonalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
+	ReconcileAdditionalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
 }
 
 const (
@@ -62,27 +62,38 @@ const (
 )
 
 // GetLabels ...
-func GetLabels(instance *kappnavv1.Kappnav, component *metav1.ObjectMeta) map[string]string {
+func GetLabels(instance *kappnavv1.Kappnav,
+	existingLabels map[string]string, component *metav1.ObjectMeta) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":       instance.Name,
+		"app.kubernetes.io/instance":   instance.Name,
 		"app.kubernetes.io/managed-by": "kappnav-operator",
 	}
 	if component != nil && len(component.Name) > 0 {
 		labels["app.kubernetes.io/component"] = component.GetName()
 	}
+	// Allow app.kubernetes.io/name to be overriden by the CR.
+	// See: https://github.com/appsody/appsody-operator/issues/179
 	for key, value := range instance.Labels {
-		if key != "app.kubernetes.io/name" &&
+		if key != "app.kubernetes.io/instance" &&
 			key != "app.kubernetes.io/component" &&
 			key != "app.kubernetes.io/managed-by" {
 			labels[key] = value
 		}
 	}
-	return labels
+	if existingLabels == nil {
+		return labels
+	}
+	// Add labels to the existing map.
+	for key, value := range labels {
+		existingLabels[key] = value
+	}
+	return existingLabels
 }
 
 // CustomizeServiceAccount ...
 func CustomizeServiceAccount(sa *corev1.ServiceAccount, instance *kappnavv1.Kappnav) {
-	sa.Labels = GetLabels(instance, &sa.ObjectMeta)
+	sa.Labels = GetLabels(instance, sa.Labels, &sa.ObjectMeta)
 	imagePullSecrets := make([]corev1.LocalObjectReference, 1)
 	imagePullSecrets[0] = corev1.LocalObjectReference{
 		Name: "sa-" + sa.GetNamespace(),
@@ -101,7 +112,7 @@ func CustomizeServiceAccount(sa *corev1.ServiceAccount, instance *kappnavv1.Kapp
 // CustomizeClusterRoleBinding ...
 func CustomizeClusterRoleBinding(crb *rbacv1.ClusterRoleBinding,
 	sa *corev1.ServiceAccount, instance *kappnavv1.Kappnav) {
-	crb.Labels = GetLabels(instance, &crb.ObjectMeta)
+	crb.Labels = GetLabels(instance, crb.Labels, &crb.ObjectMeta)
 	crb.Subjects = []rbacv1.Subject{
 		{
 			Kind:      "ServiceAccount",
@@ -118,23 +129,30 @@ func CustomizeClusterRoleBinding(crb *rbacv1.ClusterRoleBinding,
 
 // CustomizeConfigMap ...
 func CustomizeConfigMap(configMap *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
-	configMap.Labels = GetLabels(instance, &configMap.ObjectMeta)
+	configMap.Labels = GetLabels(instance, configMap.Labels, &configMap.ObjectMeta)
 }
 
 // CustomizeSecret ...
 func CustomizeSecret(secret *corev1.Secret, instance *kappnavv1.Kappnav) {
-	secret.Labels = GetLabels(instance, &secret.ObjectMeta)
+	secret.Labels = GetLabels(instance, secret.Labels, &secret.ObjectMeta)
 }
 
 // CustomizeService ...
 func CustomizeService(service *corev1.Service, instance *kappnavv1.Kappnav, annotations map[string]string) {
-	service.Labels = GetLabels(instance, &service.ObjectMeta)
-	service.Annotations = annotations
+	service.Labels = GetLabels(instance, service.Labels, &service.ObjectMeta)
+	if service.Annotations == nil {
+		service.Annotations = annotations
+	} else {
+		// Add annotations to the existing map.
+		for key, value := range annotations {
+			service.Annotations[key] = value
+		}
+	}
 }
 
 // CustomizeUIServiceSpec ...
 func CustomizeUIServiceSpec(serviceSpec *corev1.ServiceSpec, instance *kappnavv1.Kappnav) {
-	isMinikube := instance.Spec.Env.KubeEnv == "minikube"
+	isMinikube := instance.Spec.Env.KubeEnv == "minikube" || instance.Spec.Env.KubeEnv == "k8s"
 	oldType := serviceSpec.Type
 	if isMinikube {
 		serviceSpec.Type = corev1.ServiceTypeNodePort
@@ -171,7 +189,7 @@ func CustomizeUIServiceSpec(serviceSpec *corev1.ServiceSpec, instance *kappnavv1
 
 // CustomizeIngress ...
 func CustomizeIngress(ingress *extensionsv1beta1.Ingress, instance *kappnavv1.Kappnav) {
-	ingress.Labels = GetLabels(instance, &ingress.ObjectMeta)
+	ingress.Labels = GetLabels(instance, ingress.Labels, &ingress.ObjectMeta)
 }
 
 // CustomizeUIIngressSpec ...
@@ -207,7 +225,7 @@ func CustomizeUIIngressSpec(ingressSpec *extensionsv1beta1.IngressSpec,
 
 // CustomizeRoute ...
 func CustomizeRoute(route *routev1.Route, instance *kappnavv1.Kappnav) {
-	route.Labels = GetLabels(instance, &route.ObjectMeta)
+	route.Labels = GetLabels(instance, route.Labels, &route.ObjectMeta)
 }
 
 // CustomizeUIRouteSpec ...
@@ -223,7 +241,7 @@ func CustomizeUIRouteSpec(routeSpec *routev1.RouteSpec,
 
 // CustomizeDeployment ...
 func CustomizeDeployment(deploy *appsv1.Deployment, instance *kappnavv1.Kappnav) {
-	deploy.Labels = GetLabels(instance, &deploy.ObjectMeta)
+	deploy.Labels = GetLabels(instance, deploy.Labels, &deploy.ObjectMeta)
 	// Ensure that there's at least one replica
 	if deploy.Spec.Replicas == nil || *deploy.Spec.Replicas < 1 {
 		one := int32(1)
@@ -239,7 +257,7 @@ func CustomizeDeployment(deploy *appsv1.Deployment, instance *kappnavv1.Kappnav)
 // CustomizePodSpec ...
 func CustomizePodSpec(pts *corev1.PodTemplateSpec, parentComponent *metav1.ObjectMeta,
 	containers []corev1.Container, volumes []corev1.Volume, instance *kappnavv1.Kappnav) {
-	pts.Labels = GetLabels(instance, parentComponent)
+	pts.Labels = GetLabels(instance, pts.Labels, parentComponent)
 	pts.Spec.Containers = containers
 	pts.Spec.RestartPolicy = corev1.RestartPolicyAlways
 	pts.Spec.ServiceAccountName = instance.GetName() + "-" + ServiceAccountNameSuffix
@@ -249,6 +267,7 @@ func CustomizePodSpec(pts *corev1.PodTemplateSpec, parentComponent *metav1.Objec
 
 // CustomizeKappnavConfigMap ...
 func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
+	// Initialize the config map or restore values if they have been deleted.
 	if kappnavConfig.Data == nil {
 		kappnavConfig.Data = make(map[string]string)
 	}
@@ -266,7 +285,10 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 	if len(value) == 0 {
 		kappnavConfig.Data["status-unknown"] = "Unknown"
 	}
-	kappnavConfig.Data["kappnav-sa-name"] = instance.GetName() + "-" + ServiceAccountNameSuffix
+	value, _ = kappnavConfig.Data["kappnav-sa-name"]
+	if len(value) == 0 {
+		kappnavConfig.Data["kappnav-sa-name"] = instance.GetName() + "-" + ServiceAccountNameSuffix
+	}
 	if instance.Spec.Console.EnableOkdFeaturedApp {
 		kappnavConfig.Data["okd-console-featured-app"] = "enabled"
 	} else {
@@ -280,21 +302,47 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 }
 
 // CreateUIDeploymentContainers ...
-func CreateUIDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.Container {
+func CreateUIDeploymentContainers(existingContainers []corev1.Container, instance *kappnavv1.Kappnav) []corev1.Container {
+	// Extract environment variables from existing containers.
+	var apiEnv []corev1.EnvVar = nil
+	var uiEnv []corev1.EnvVar = nil
+	if existingContainers != nil {
+		for _, c := range existingContainers {
+			switch containerName := c.Name; containerName {
+			case APIContainerName:
+				apiEnv = c.Env
+			case UIContainerName:
+				uiEnv = c.Env
+			}
+		}
+	}
 	return []corev1.Container{
-		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI,
+		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, apiEnv,
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
-		*createContainer(UIContainerName, instance, instance.Spec.AppNavUI,
+		*createContainer(UIContainerName, instance, instance.Spec.AppNavUI, uiEnv,
 			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount(instance)),
 	}
 }
 
 // CreateControllerDeploymentContainers ...
-func CreateControllerDeploymentContainers(instance *kappnavv1.Kappnav) []corev1.Container {
+func CreateControllerDeploymentContainers(existingContainers []corev1.Container, instance *kappnavv1.Kappnav) []corev1.Container {
+	// Extract environment variables from existing containers.
+	var apiEnv []corev1.EnvVar = nil
+	var controllerEnv []corev1.EnvVar = nil
+	if existingContainers != nil {
+		for _, c := range existingContainers {
+			switch containerName := c.Name; containerName {
+			case APIContainerName:
+				apiEnv = c.Env
+			case ControllerContainerName:
+				controllerEnv = c.Env
+			}
+		}
+	}
 	return []corev1.Container{
-		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI,
+		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, apiEnv,
 			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
-		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController,
+		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController, controllerEnv,
 			createControllerReadinessProbe(), createControllerLivenessProbe(), nil),
 	}
 }
@@ -444,6 +492,7 @@ func setConsoleDefaults(instance *kappnavv1.Kappnav) {
 
 func createContainer(name string, instance *kappnavv1.Kappnav,
 	containerConfig *kappnavv1.KappnavContainerConfiguration,
+	existingEnv []corev1.EnvVar,
 	readinessProbe *corev1.Probe,
 	livenessProbe *corev1.Probe,
 	volumeMount *corev1.VolumeMount) *corev1.Container {
@@ -468,6 +517,17 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 		ReadinessProbe: readinessProbe,
 		LivenessProbe:  livenessProbe,
 	}
+	// Copy custom environment variable settings.
+	if existingEnv != nil {
+		for _, envVar := range existingEnv {
+			if envVar.Name != "KAPPNAV_CR_NAME" &&
+				envVar.Name != "KAPPNAV_CONFIG_NAMESPACE" &&
+				envVar.Name != "KUBE_ENV" {
+				container.Env = append(container.Env, envVar)
+			}
+		}
+	}
+	// Add volume mount if specified.
 	if volumeMount != nil {
 		container.VolumeMounts = []corev1.VolumeMount{*volumeMount}
 	}
@@ -500,27 +560,6 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 	return container
 }
 
-// GetCondition ...
-func GetCondition(conditionType kappnavv1.StatusConditionType, status *kappnavv1.KappnavStatus) *kappnavv1.StatusCondition {
-	for i := range status.Conditions {
-		if status.Conditions[i].Type == conditionType {
-			return &status.Conditions[i]
-		}
-	}
-	return nil
-}
-
-// SetCondition ...
-func SetCondition(condition kappnavv1.StatusCondition, status *kappnavv1.KappnavStatus) {
-	for i := range status.Conditions {
-		if status.Conditions[i].Type == condition.Type {
-			status.Conditions[i] = condition
-			return
-		}
-	}
-	status.Conditions = append(status.Conditions, condition)
-}
-
 func createAPIReadinessProbe() *corev1.Probe {
 	return &corev1.Probe{
 		Handler: corev1.Handler{
@@ -545,7 +584,7 @@ func createAPILivenessProbe() *corev1.Probe {
 func createUIReadinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 	kubeEnv := instance.Spec.Env.KubeEnv
 	var scheme corev1.URIScheme
-	if kubeEnv == "minikube" {
+	if kubeEnv == "minikube" || kubeEnv == "k8s" {
 		scheme = corev1.URISchemeHTTP
 	} else {
 		scheme = corev1.URISchemeHTTPS
@@ -625,4 +664,29 @@ func setPodSecurity(pts *corev1.PodTemplateSpec) {
 		RunAsNonRoot: &t,
 		RunAsUser:    &user,
 	}
+}
+
+//
+// Functions for accessing and updating status on the CR
+//
+
+// GetCondition ...
+func GetCondition(conditionType kappnavv1.StatusConditionType, status *kappnavv1.KappnavStatus) *kappnavv1.StatusCondition {
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == conditionType {
+			return &status.Conditions[i]
+		}
+	}
+	return nil
+}
+
+// SetCondition ...
+func SetCondition(condition kappnavv1.StatusCondition, status *kappnavv1.KappnavStatus) {
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == condition.Type {
+			status.Conditions[i] = condition
+			return
+		}
+	}
+	status.Conditions = append(status.Conditions, condition)
 }
