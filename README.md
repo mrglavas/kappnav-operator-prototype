@@ -1,8 +1,4 @@
-# kappnav-operator-prototype
-
-## Pulling from GitHub
-
-After extracting the project, rename the base dir from `kappnav-operator-prototype` to `kappnav-operator`. This is a temporary workaround.
+# kappnav-operator-prototype 
 
 ## Building the kappnav operator
 
