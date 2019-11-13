@@ -152,7 +152,7 @@ func CustomizeService(service *corev1.Service, instance *kappnavv1.Kappnav, anno
 
 // CustomizeUIServiceSpec ...
 func CustomizeUIServiceSpec(serviceSpec *corev1.ServiceSpec, instance *kappnavv1.Kappnav) {
-	isMinikube := instance.Spec.Env.KubeEnv == "minikube" || instance.Spec.Env.KubeEnv == "k8s"
+	isMinikube := IsMinikubeEnv(instance.Spec.Env.KubeEnv)
 	oldType := serviceSpec.Type
 	if isMinikube {
 		serviceSpec.Type = corev1.ServiceTypeNodePort
@@ -584,7 +584,7 @@ func createAPILivenessProbe() *corev1.Probe {
 func createUIReadinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 	kubeEnv := instance.Spec.Env.KubeEnv
 	var scheme corev1.URIScheme
-	if kubeEnv == "minikube" || kubeEnv == "k8s" {
+	if IsMinikubeEnv(kubeEnv) {
 		scheme = corev1.URISchemeHTTP
 	} else {
 		scheme = corev1.URISchemeHTTPS
@@ -664,6 +664,11 @@ func setPodSecurity(pts *corev1.PodTemplateSpec) {
 		RunAsNonRoot: &t,
 		RunAsUser:    &user,
 	}
+}
+
+// IsMinikubeEnv ...
+func IsMinikubeEnv(kubeEnv string) bool {
+	return kubeEnv == "minikube" || kubeEnv == "k8s"
 }
 
 //

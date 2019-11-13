@@ -176,7 +176,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Create or update cluster role binding
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.GetName() + "-crb",
+			Name:      instance.GetName() + "-" + instance.GetNamespace() + "-crb",
 			Namespace: instance.GetNamespace(),
 		},
 	}
@@ -210,7 +210,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		"service.alpha.openshift.io/serving-cert-secret-name": dummySecret.Name,
 	}
 
-	isMinikube := instance.Spec.Env.KubeEnv == "minikube" || instance.Spec.Env.KubeEnv == "k8s"
+	isMinikube := kappnavutils.IsMinikubeEnv(instance.Spec.Env.KubeEnv)
 	if isMinikube {
 		// Create or update dummy secret
 		err = r.CreateOrUpdate(dummySecret, instance, func() error {
@@ -297,6 +297,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 						reqLogger.Error(err, "Failed to parse template file: "+fileName)
 						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 					}
+					// Execute the template against the Kappnav CR instance.
 					var buf bytes.Buffer
 					err = t.Execute(&buf, instance)
 					if err != nil {
