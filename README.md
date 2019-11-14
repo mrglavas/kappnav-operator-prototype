@@ -1,8 +1,4 @@
-# kappnav-operator-prototype
-
-## Pulling from GitHub
-
-After extracting the project, rename the base dir from `kappnav-operator-prototype` to `kappnav-operator`. This is a temporary workaround.
+# kappnav-operator-prototype 
 
 ## Building the kappnav operator
 
@@ -21,9 +17,7 @@ If you ever change the structs for the Kappnav CRD (located in kappnav_types.go)
 
 This regenerates the CRD and the code that allows a Kappnav CR to be accessed programatically through the k8s APIs.
 
-To build the project run:
-
-operator-sdk build kappnav.io/kappnav-operator:0.0.1
+To build the project run: `./build.sh`
 
 ## Installing the kappnav operator
 
