@@ -17,8 +17,6 @@ type KappnavSpec struct {
 	ExtensionContainers map[string]*KappnavContainerConfiguration `json:"extensionContainers,omitempty"`
 	Image               *KappnavImageConfiguration                `json:"image,omitempty"`
 	Env                 *Environment                              `json:"env,omitempty"`
-	Arch                *Architecture                             `json:"arch,omitempty"`
-	Console             *KappnavConsoleConfiguration              `json:"console,omitempty"`
 }
 
 // KappnavContainerConfiguration defines the configuration for a Kappnav container
@@ -56,33 +54,6 @@ type KappnavImageConfiguration struct {
 // Environment variables.
 type Environment struct {
 	KubeEnv string `json:"kubeEnv,omitempty"`
-}
-
-// Architecture ...
-type Architecture struct {
-	Amd64   SchedulingWeight `json:"amd64,omitempty"`
-	Ppc64le SchedulingWeight `json:"ppc64le,omitempty"`
-	S390x   SchedulingWeight `json:"s390x,omitempty"`
-}
-
-// SchedulingWeight ...
-type SchedulingWeight string
-
-const (
-	// DoNotUse ...
-	DoNotUse SchedulingWeight = "0 - Do not use"
-	// LeastPreferred ...
-	LeastPreferred SchedulingWeight = "1 - Least preferred"
-	// NoPreference ...
-	NoPreference SchedulingWeight = "2 - No preference"
-	// MostPreferred ...
-	MostPreferred SchedulingWeight = "3 - Most preferred"
-)
-
-// KappnavConsoleConfiguration is configuration for the OpenShift web console.
-type KappnavConsoleConfiguration struct {
-	EnableOkdFeaturedApp bool `json:"enableOkdFeaturedApp,omitempty"`
-	EnableOkdLauncher    bool `json:"enableOkdLauncher,omitempty"`
 }
 
 // KappnavStatus defines the observed state of Kappnav

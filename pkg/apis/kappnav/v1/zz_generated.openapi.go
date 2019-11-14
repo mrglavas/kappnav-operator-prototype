@@ -103,21 +103,11 @@ func schema_pkg_apis_kappnav_v1_KappnavSpec(ref common.ReferenceCallback) common
 							Ref: ref("./pkg/apis/kappnav/v1.Environment"),
 						},
 					},
-					"arch": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("./pkg/apis/kappnav/v1.Architecture"),
-						},
-					},
-					"console": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("./pkg/apis/kappnav/v1.KappnavConsoleConfiguration"),
-						},
-					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"./pkg/apis/kappnav/v1.Architecture", "./pkg/apis/kappnav/v1.Environment", "./pkg/apis/kappnav/v1.KappnavConsoleConfiguration", "./pkg/apis/kappnav/v1.KappnavContainerConfiguration", "./pkg/apis/kappnav/v1.KappnavImageConfiguration"},
+			"./pkg/apis/kappnav/v1.Environment", "./pkg/apis/kappnav/v1.KappnavContainerConfiguration", "./pkg/apis/kappnav/v1.KappnavImageConfiguration"},
 	}
 }
 

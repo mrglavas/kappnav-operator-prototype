@@ -10,12 +10,12 @@ spec:
 
   appNavAPI:
     repository: kappnav/apis
-    tag: 0.1.1
+    tag: 0.1.2
     resources:
       enabled: false
       requests:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 10m
+        memory: 256Mi
       limits:
         cpu: 500m
         memory: 512Mi
@@ -26,12 +26,12 @@ spec:
 
   appNavController:
     repository: kappnav/controller
-    tag: 0.1.1
+    tag: 0.1.2
     resources:
       enabled: false
       requests:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 10m
+        memory: 16Mi
       limits:
         cpu: 500m
         memory: 512Mi
@@ -42,12 +42,12 @@ spec:
 
   appNavUI:
     repository: kappnav/ui
-    tag: 0.1.1
+    tag: 0.1.2
     resources:
       enabled: false
       requests:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 50m
+        memory: 64Mi
       limits:
         cpu: 500m
         memory: 512Mi
@@ -61,24 +61,3 @@ spec:
   ###############################################################################
   env:
     kubeEnv: minikube
-
-  ###############################################################################
-  ## Architecture
-  ###############################################################################
-  # Specify architecture (amd64, ppc64le, s390x) and weight to be
-  # used for scheduling as follows :
-  #   0 - Do not use
-  #   1 - Least preferred
-  #   2 - No preference
-  #   3 - Most preferred
-  arch:
-    amd64: "2 - No preference"
-    ppc64le: "2 - No preference"
-    s390x: "2 - No preference"
-
-  ###############################################################################
-  ## OpenShift web console variables
-  ###############################################################################
-  console:
-    enableOkdFeaturedApp: true
-    enableOkdLauncher: true

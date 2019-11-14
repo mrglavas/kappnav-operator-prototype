@@ -289,16 +289,6 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 	if len(value) == 0 {
 		kappnavConfig.Data["kappnav-sa-name"] = instance.GetName() + "-" + ServiceAccountNameSuffix
 	}
-	if instance.Spec.Console.EnableOkdFeaturedApp {
-		kappnavConfig.Data["okd-console-featured-app"] = "enabled"
-	} else {
-		kappnavConfig.Data["okd-console-featured-app"] = "disabled"
-	}
-	if instance.Spec.Console.EnableOkdLauncher {
-		kappnavConfig.Data["okd-console-app-launcher"] = "enabled"
-	} else {
-		kappnavConfig.Data["okd-console-app-launcher"] = "disabled"
-	}
 }
 
 // CreateUIDeploymentContainers ...
@@ -372,8 +362,6 @@ func SetKappnavDefaults(instance *kappnavv1.Kappnav, extension KappnavExtension)
 	setControllerContainerDefaults(instance)
 	setImageDefaults(instance)
 	setEnvironmentDefaults(instance)
-	setArchitectureDefaults(instance)
-	setConsoleDefaults(instance)
 }
 
 func setAPIContainerDefaults(instance *kappnavv1.Kappnav) {
@@ -459,34 +447,6 @@ func setEnvironmentDefaults(instance *kappnavv1.Kappnav) {
 	}
 	if len(env.KubeEnv) == 0 {
 		env.KubeEnv = KubeEnvDefault
-	}
-}
-
-func setArchitectureDefaults(instance *kappnavv1.Kappnav) {
-	arch := instance.Spec.Arch
-	if arch == nil {
-		arch = &kappnavv1.Architecture{}
-		instance.Spec.Arch = arch
-	}
-	if len(arch.Amd64) == 0 {
-		arch.Amd64 = kappnavv1.NoPreference
-	}
-	if len(arch.Ppc64le) == 0 {
-		arch.Ppc64le = kappnavv1.NoPreference
-	}
-	if len(arch.S390x) == 0 {
-		arch.S390x = kappnavv1.NoPreference
-	}
-}
-
-func setConsoleDefaults(instance *kappnavv1.Kappnav) {
-	console := instance.Spec.Console
-	if console == nil {
-		console = &kappnavv1.KappnavConsoleConfiguration{
-			EnableOkdFeaturedApp: true,
-			EnableOkdLauncher:    true,
-		}
-		instance.Spec.Console = console
 	}
 }
 
