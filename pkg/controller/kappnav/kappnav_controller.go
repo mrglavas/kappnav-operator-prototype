@@ -154,8 +154,21 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Call factory method to create new KappnavExtension
 	extension := kappnavutils.NewKappnavExtension()
 
+	// Read default values file
+	fData, err := ioutil.ReadFile("deploy/default_values.yaml")
+	if err != nil {
+		reqLogger.Error(err, "Failed to read default values file")
+		return reconcile.Result{}, err
+	}
+	defaults := &kappnavv1.Kappnav{}
+	err = yaml.Unmarshal(fData, defaults)
+	if err != nil {
+		reqLogger.Error(err, "Failed to parse default values file")
+		return reconcile.Result{}, err
+	}
+
 	// Apply defaults to the Kappnav instance
-	kappnavutils.SetKappnavDefaults(instance, extension)
+	kappnavutils.SetKappnavDefaults(instance, defaults, extension)
 
 	// Create or update service account
 	serviceAccount := &corev1.ServiceAccount{

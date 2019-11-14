@@ -16,7 +16,7 @@ import (
 // KappnavExtension extends the reconciler to manage
 // additional resources and override default configuration.
 type KappnavExtension interface {
-	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav)
+	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav)
 	ReconcileAdditionalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
 }
 
@@ -29,29 +29,6 @@ const (
 	ControllerContainerName string = "kappnav-controller"
 	// ServiceAccountNameSuffix ...
 	ServiceAccountNameSuffix string = "sa"
-)
-
-const (
-	// DefaultAPIRepository ...
-	DefaultAPIRepository kappnavv1.Repository = "kappnav/apis"
-	// DefaultUIRepository ...
-	DefaultUIRepository kappnavv1.Repository = "kappnav/ui"
-	// DefaultControllerRepository ...
-	DefaultControllerRepository kappnavv1.Repository = "kappnav/controller"
-	// DefaultTag ...
-	DefaultTag kappnavv1.Tag = "0.1.0"
-)
-
-const (
-	// CPUConstraintDefault ...
-	CPUConstraintDefault string = "500m"
-	// MemoryConstraintDefault ...
-	MemoryConstraintDefault string = "512Mi"
-)
-
-const (
-	// KubeEnvDefault ...
-	KubeEnvDefault string = "okd"
 )
 
 const (
@@ -353,100 +330,101 @@ func CreateUIVolumes(instance *kappnavv1.Kappnav) []corev1.Volume {
 }
 
 // SetKappnavDefaults sets default values on the CR instance
-func SetKappnavDefaults(instance *kappnavv1.Kappnav, extension KappnavExtension) {
+func SetKappnavDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav, extension KappnavExtension) {
 	if extension != nil {
-		extension.ApplyAdditionalDefaults(instance)
+		extension.ApplyAdditionalDefaults(instance, defaults)
 	}
-	setAPIContainerDefaults(instance)
-	setUIContainerDefaults(instance)
-	setControllerContainerDefaults(instance)
-	setImageDefaults(instance)
-	setEnvironmentDefaults(instance)
+	setAPIContainerDefaults(instance, defaults)
+	setUIContainerDefaults(instance, defaults)
+	setControllerContainerDefaults(instance, defaults)
+	setImageDefaults(instance, defaults)
+	setEnvironmentDefaults(instance, defaults)
 }
 
-func setAPIContainerDefaults(instance *kappnavv1.Kappnav) {
+func setAPIContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
 	apiConfig := instance.Spec.AppNavAPI
 	if apiConfig == nil {
-		apiConfig = &kappnavv1.KappnavContainerConfiguration{}
-		instance.Spec.AppNavAPI = apiConfig
+		instance.Spec.AppNavAPI = defaults.Spec.AppNavAPI
+	} else {
+		setContainerDefaults(apiConfig, defaults.Spec.AppNavAPI)
 	}
-	setContainerDefaults(apiConfig, DefaultAPIRepository)
 }
 
-func setUIContainerDefaults(instance *kappnavv1.Kappnav) {
+func setUIContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
 	uiConfig := instance.Spec.AppNavUI
 	if uiConfig == nil {
-		uiConfig = &kappnavv1.KappnavContainerConfiguration{}
-		instance.Spec.AppNavUI = uiConfig
+		instance.Spec.AppNavUI = defaults.Spec.AppNavUI
+	} else {
+		setContainerDefaults(uiConfig, defaults.Spec.AppNavUI)
 	}
-	setContainerDefaults(uiConfig, DefaultUIRepository)
 }
 
-func setControllerContainerDefaults(instance *kappnavv1.Kappnav) {
+func setControllerContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
 	controllerConfig := instance.Spec.AppNavController
 	if controllerConfig == nil {
-		controllerConfig = &kappnavv1.KappnavContainerConfiguration{}
-		instance.Spec.AppNavController = controllerConfig
+		instance.Spec.AppNavController = defaults.Spec.AppNavController
+	} else {
+		setContainerDefaults(controllerConfig, defaults.Spec.AppNavController)
 	}
-	setContainerDefaults(controllerConfig, DefaultControllerRepository)
 }
 
-func setContainerDefaults(containerConfig *kappnavv1.KappnavContainerConfiguration, defaultRepoName kappnavv1.Repository) {
+func setContainerDefaults(containerConfig *kappnavv1.KappnavContainerConfiguration,
+	defaultContainerConfig *kappnavv1.KappnavContainerConfiguration) {
 	if len(containerConfig.Repository) == 0 {
-		containerConfig.Repository = defaultRepoName
+		containerConfig.Repository = defaultContainerConfig.Repository
 	}
 	if len(containerConfig.Tag) == 0 {
-		containerConfig.Tag = DefaultTag
+		containerConfig.Tag = defaultContainerConfig.Tag
 	}
 	if containerConfig.Resources == nil {
-		containerConfig.Resources = &kappnavv1.KappnavResourceConstraints{
-			Enabled: false,
-		}
+		containerConfig.Resources = defaultContainerConfig.Resources
 	} else {
 		if containerConfig.Resources.Enabled {
 			if containerConfig.Resources.Requests == nil {
-				containerConfig.Resources.Requests = &kappnavv1.Resources{}
+				containerConfig.Resources.Requests = defaultContainerConfig.Resources.Requests
+			} else {
+				setResourceDefaults(containerConfig.Resources.Requests, defaultContainerConfig.Resources.Requests)
 			}
-			setResourceDefaults(containerConfig.Resources.Requests)
 			if containerConfig.Resources.Limits == nil {
-				containerConfig.Resources.Limits = &kappnavv1.Resources{}
+				containerConfig.Resources.Limits = defaultContainerConfig.Resources.Limits
+			} else {
+				setResourceDefaults(containerConfig.Resources.Limits, defaultContainerConfig.Resources.Limits)
 			}
-			setResourceDefaults(containerConfig.Resources.Limits)
 		}
 	}
 }
 
-func setResourceDefaults(resources *kappnavv1.Resources) {
+func setResourceDefaults(resources *kappnavv1.Resources, defaultResources *kappnavv1.Resources) {
 	if len(resources.CPU) == 0 {
-		resources.CPU = CPUConstraintDefault
+		resources.CPU = defaultResources.CPU
 	}
 	if len(resources.Memory) == 0 {
-		resources.Memory = MemoryConstraintDefault
+		resources.Memory = defaultResources.Memory
 	}
 }
 
-func setImageDefaults(instance *kappnavv1.Kappnav) {
+func setImageDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
 	image := instance.Spec.Image
 	if image == nil {
-		image = &kappnavv1.KappnavImageConfiguration{}
-		instance.Spec.Image = image
-	}
-	if len(image.PullPolicy) == 0 {
-		image.PullPolicy = corev1.PullAlways
-	}
-	if image.PullSecrets == nil {
-		image.PullSecrets = []string{}
+		instance.Spec.Image = defaults.Spec.Image
+	} else {
+		if len(image.PullPolicy) == 0 {
+			image.PullPolicy = defaults.Spec.Image.PullPolicy
+		}
+		if image.PullSecrets == nil {
+			image.PullSecrets = defaults.Spec.Image.PullSecrets
+		}
 	}
 }
 
-func setEnvironmentDefaults(instance *kappnavv1.Kappnav) {
+func setEnvironmentDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
 	env := instance.Spec.Env
 	if env == nil {
-		env = &kappnavv1.Environment{}
-		instance.Spec.Env = env
-	}
-	if len(env.KubeEnv) == 0 {
-		env.KubeEnv = KubeEnvDefault
+		instance.Spec.Env = defaults.Spec.Env
+	} else {
+		if len(env.KubeEnv) == 0 {
+			env.KubeEnv = defaults.Spec.Env.KubeEnv
+		}
 	}
 }
 

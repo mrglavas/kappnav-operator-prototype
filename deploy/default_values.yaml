@@ -1,0 +1,63 @@
+apiVersion: kappnav.io/v1
+kind: Kappnav
+metadata:
+  name: defaults
+spec:
+
+  ###############################################################################
+  ## kAppNav REST API variables
+  ###############################################################################
+
+  appNavAPI:
+    repository: kappnav/apis
+    tag: 0.1.2
+    resources:
+      enabled: false
+      requests:
+        cpu: 10m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  ###############################################################################
+  ## kAppNav Controller variables
+  ###############################################################################
+
+  appNavController:
+    repository: kappnav/controller
+    tag: 0.1.2
+    resources:
+      enabled: false
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  ###############################################################################
+  ## kAppNav UI variables
+  ###############################################################################
+
+  appNavUI:
+    repository: kappnav/ui
+    tag: 0.1.2
+    resources:
+      enabled: false
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  image:
+    pullPolicy: Always
+    pullSecrets: []
+
+  ###############################################################################
+  ## Environmental variables
+  ###############################################################################
+  env:
+    kubeEnv: okd

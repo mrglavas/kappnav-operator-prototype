@@ -34,6 +34,7 @@ ENV OPERATOR=/usr/local/bin/kappnav-operator \
 
 # install operator binary
 COPY build/_output/bin/${PROJECT_NAME} ${OPERATOR}
+COPY deploy/default_values.yaml deploy/
 COPY deploy/maps/ maps/
 COPY deploy/crds/extensions crds/
 
