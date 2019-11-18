@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # imitations under the License.
 ###########################################################################
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -27,11 +28,9 @@ data:
         "description":"View Routes detail",
         "description.nls":"action.url.routes.detail.desc",
 {{ if or (eq .Spec.Env.KubeEnv "minishift") }} 
-      # do not use / before project otherwise it will have // as openshift console url end with / already
-      "url-pattern":"${builtin.openshift-console-url}project/${resource.$.metadata.namespace}/browse/routes/${resource.$.metadata.name}",    
+      "url-pattern":"${builtin.openshift-console-url}/project/${resource.$.metadata.namespace}/browse/routes/${resource.$.metadata.name}",    
 {{ else if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp") }} 
-      # do not use / before k8s otherwise it will have // as openshift console url end with / already
-      "url-pattern":"${builtin.openshift-admin-console-url}k8s/ns/${resource.$.metadata.namespace}/routes/${resource.$.metadata.name}",         
+      "url-pattern":"${builtin.openshift-admin-console-url}/k8s/ns/${resource.$.metadata.namespace}/routes/${resource.$.metadata.name}",         
 {{ end }}
         "open-window": "current", 
         "menu-item": "false" 

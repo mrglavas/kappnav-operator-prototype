@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # imitations under the License.
 ###########################################################################
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,11 +31,28 @@ data:
 {{ if eq .Spec.Env.KubeEnv "minikube" }}
         "url-pattern":"${builtin.openshift-console-url}/job/${resource.$.metadata.namespace}/${resource.$.metadata.name}?namespace=${resource.$.metadata.namespace}", 
 {{ else if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp") }} 
-        # do not use / before k8s otherwise it will have // as openshift console url end with / already
-        "url-pattern":"${builtin.openshift-admin-console-url}k8s/ns/${resource.$.metadata.namespace}/jobs/${resource.$.metadata.name}", 
+        "url-pattern":"${builtin.openshift-admin-console-url}/k8s/ns/${resource.$.metadata.namespace}/jobs/${resource.$.metadata.name}", 
 {{ end }}
         "open-window": "current", 
         "menu-item": "false" 
-      }
+      },
 {{ end }}
-    ]
+      {
+        "name":"joblogs",
+        "text":"View Job Logs",
+        "text.nls":"action.url.job.logs.text",
+        "description":"View Job logs",
+        "description.nls":"action.url.job.logs.desc",
+        "url-pattern":"${builtin.openshift-console-url}/project/${resource.$.metadata.namespace}/browse/pods/${var.podname}?tab=logs",
+        "open-window": "tab"
+      }
+    ],
+  variables: |
+    {
+        "podname": "${func.kubectlGet(pods,-l,job-name=${resource.$.metadata.name},-o=jsonpath=${snippet.name()})}"
+
+    }
+  snippets:  |
+    {
+        "name": "function name() { return '{.items[*].metadata.name}'; }"
+    }

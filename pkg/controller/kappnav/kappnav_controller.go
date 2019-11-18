@@ -154,21 +154,12 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Call factory method to create new KappnavExtension
 	extension := kappnavutils.NewKappnavExtension()
 
-	// Read default values file
-	fData, err := ioutil.ReadFile("deploy/default_values.yaml")
-	if err != nil {
-		reqLogger.Error(err, "Failed to read default values file")
-		return reconcile.Result{}, err
-	}
-	defaults := &kappnavv1.Kappnav{}
-	err = yaml.Unmarshal(fData, defaults)
-	if err != nil {
-		reqLogger.Error(err, "Failed to parse default values file")
-		return reconcile.Result{}, err
-	}
-
 	// Apply defaults to the Kappnav instance
-	kappnavutils.SetKappnavDefaults(instance, defaults, extension)
+	err = kappnavutils.SetKappnavDefaults(instance, extension)
+	if err != nil {
+		reqLogger.Error(err, "Failed to process default values file")
+		return reconcile.Result{}, err
+	}
 
 	// Create or update service account
 	serviceAccount := &corev1.ServiceAccount{
@@ -286,8 +277,8 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		}
 	}
 
-	// Create or update action and status config maps.
-	mapDirs := []string{"maps/action", "maps/status"}
+	// Create or update action, section and status config maps.
+	mapDirs := []string{"maps/action", "maps/sections", "maps/status"}
 	for _, dir := range mapDirs {
 		files, err := ioutil.ReadDir(dir)
 		if err != nil {
@@ -324,18 +315,18 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 						reqLogger.Error(err, "Failed to unmarshal YAML file: "+fileName)
 						return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 					}
-					actionOrStatusMap := &corev1.ConfigMap{
+					clusterMap := &corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      configMap.GetName(),
 							Namespace: instance.GetNamespace(),
 						},
 					}
 					// Write the data to the map in the cluster.
-					err = r.CreateOrUpdate(actionOrStatusMap, instance, func() error {
-						kappnavutils.CustomizeConfigMap(actionOrStatusMap, instance)
+					err = r.CreateOrUpdate(clusterMap, instance, func() error {
+						kappnavutils.CustomizeConfigMap(clusterMap, instance)
 						// Write the data section if it doesn't exist or is empty.
-						if actionOrStatusMap.Data == nil || len(actionOrStatusMap.Data) == 0 {
-							actionOrStatusMap.Data = configMap.Data
+						if clusterMap.Data == nil || len(clusterMap.Data) == 0 {
+							clusterMap.Data = configMap.Data
 						}
 						return nil
 					})

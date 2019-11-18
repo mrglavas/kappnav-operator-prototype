@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # imitations under the License.
 ###########################################################################
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -22,13 +23,72 @@ data:
     [
 {{ if or (eq .Spec.Env.KubeEnv "minishift") (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp") }}
       { 
+        "name":"projdoc", 
+        "text":"View Project Doc", 
+        "text.nls":"action.url.deployment.projdoc.text", 
+        "description":"View project documentation.", 
+        "description.nls":"action.url.deployment.projdoc.desc", 
+{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
+        "url-pattern":"${resource.$.metadata.annotations['image.opencontainers.org/documentation']}",
+{{ else }}
+        "url-pattern": "",
+{{ end }}
+        "open-window": "tab", 
+        "menu-item": "true",
+        "enablement-label": "stack.appsody.dev/id"
+      },
+      { 
+        "name":"projcode", 
+        "text":"View Project Code", 
+        "text.nls":"action.url.deployment.projcode.text", 
+        "description":"View project source code.", 
+        "description.nls":"action.url.deployment.projcode.desc", 
+{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
+        "url-pattern":"${resource.$.metadata.annotations['image.opencontainers.org/source']}",
+{{ else }}
+        "url-pattern": "",
+{{ end }}
+        "open-window": "tab", 
+        "menu-item": "true",
+        "enablement-label": "stack.appsody.dev/id"
+      },
+      { 
+        "name":"kabcolldoc", 
+        "text":"View Collection Doc", 
+        "text.nls":"action.url.deployment.kabcolldoc.text", 
+        "description":"View Kabanero Collection Documentation.", 
+        "description.nls":"action.url.deployment.kabcolldoc.desc", 
+{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
+        "url-pattern":"${resource.$.metadata.annotations['stack.appsody.dev/documentation']}",
+{{ else }}
+        "url-pattern": "",
+{{ end }}
+        "open-window": "tab", 
+        "menu-item": "true",
+        "enablement-label": "stack.appsody.dev/id"
+      },
+      { 
+        "name":"kabcollcode", 
+        "text":"View Collection Code", 
+        "text.nls":"action.url.deployment.kabcollcode.text", 
+        "description":"View Kabanero collection source code.", 
+        "description.nls":"action.url.deployment.kabcollcode.desc", 
+{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
+        "url-pattern":"${resource.$.metadata.annotations['stack.appsody.dev/source']}",
+{{ else }}
+        "url-pattern": "",
+{{ end }}
+        "open-window": "tab", 
+        "menu-item": "true",
+        "enablement-label": "stack.appsody.dev/id" 
+      },
+      { 
         "name":"replicas", 
         "text":"View Replicas", 
         "text.nls":"action.url.deployment.replicas.text", 
         "description":"View Deployment replicas", 
         "description.nls":"action.url.deployment.replicas.desc", 
-        # do not use / before project otherwise it will have // as openshift console url end with / already
-        "url-pattern":"${builtin.openshift-console-url}project/${resource.$.metadata.namespace}/browse/deployment/${resource.$.metadata.name}", 
+        "url-pattern":"${builtin.openshift-admin-console-url}/k8s/ns/${resource.$.metadata.namespace}/replicasets/${func.replicaset()}", 
         "open-window": "current", 
         "menu-item": "true" 
       },
@@ -39,8 +99,7 @@ data:
         "description":"View Deployment detail", 
         "description.nls":"action.url.deployment.detail.desc", 
 {{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
-        # do not use / before k8s otherwise it will have // as openshift console url end with / already
-        "url-pattern":"${builtin.openshift-admin-console-url}k8s/ns/${resource.$.metadata.namespace}/deployments/${resource.$.metadata.name}",
+        "url-pattern":"${builtin.openshift-admin-console-url}/k8s/ns/${resource.$.metadata.namespace}/deployments/${resource.$.metadata.name}",
 {{ else }}
         "url-pattern": "",
 {{ end }}
