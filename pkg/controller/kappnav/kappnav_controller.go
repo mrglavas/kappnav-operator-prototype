@@ -128,8 +128,6 @@ type ReconcileKappnav struct {
 
 // Reconcile reads that state of the cluster for a Kappnav object and makes changes based on the state read
 // and what is in the Kappnav.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
@@ -161,6 +159,11 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
+	uiServiceAndRouteName := &metav1.ObjectMeta{
+		Name:      instance.GetName() + "-ui-service",
+		Namespace: instance.GetNamespace(),
+	}
+
 	// Create or update service account
 	serviceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -169,7 +172,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 	}
 	err = r.CreateOrUpdate(serviceAccount, instance, func() error {
-		kappnavutils.CustomizeServiceAccount(serviceAccount, instance)
+		kappnavutils.CustomizeServiceAccount(serviceAccount, uiServiceAndRouteName, instance)
 		return nil
 	})
 	if err != nil {
@@ -196,14 +199,9 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Dummy secret for Minikube support
 	dummySecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.GetName() + "-" + kappnavutils.UIVolumeName,
+			Name:      instance.GetName() + "-" + kappnavutils.OAuthVolumeName,
 			Namespace: instance.GetNamespace(),
 		},
-	}
-
-	uiServiceAndRouteName := &metav1.ObjectMeta{
-		Name:      instance.GetName() + "-ui-service",
-		Namespace: instance.GetNamespace(),
 	}
 
 	// The UI service

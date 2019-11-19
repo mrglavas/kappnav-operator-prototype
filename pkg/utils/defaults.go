@@ -13,11 +13,15 @@ func SetKappnavDefaults(instance *kappnavv1.Kappnav, extension KappnavExtension)
 		return err
 	}
 	if extension != nil {
-		extension.ApplyAdditionalDefaults(instance, defaults)
+		err = extension.ApplyAdditionalDefaults(instance, defaults)
+		if err != nil {
+			return err
+		}
 	}
 	setAPIContainerDefaults(instance, defaults)
 	setUIContainerDefaults(instance, defaults)
 	setControllerContainerDefaults(instance, defaults)
+	setExtensionContainerDefaults(instance, defaults)
 	setImageDefaults(instance, defaults)
 	setEnvironmentDefaults(instance, defaults)
 	return nil
@@ -61,6 +65,26 @@ func setControllerContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappn
 		instance.Spec.AppNavController = defaults.Spec.AppNavController
 	} else {
 		setContainerDefaults(controllerConfig, defaults.Spec.AppNavController)
+	}
+}
+
+func setExtensionContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) {
+	extensionContainerConfig := instance.Spec.ExtensionContainers
+	if extensionContainerConfig == nil {
+		instance.Spec.ExtensionContainers = defaults.Spec.ExtensionContainers
+	} else {
+		defaultExtensionContainerConfig := defaults.Spec.ExtensionContainers
+		if defaultExtensionContainerConfig != nil {
+			for defaultConfigName, defaultConfig := range defaultExtensionContainerConfig {
+				log.Info("Default extension config found: " + defaultConfigName)
+				extConfig := extensionContainerConfig[defaultConfigName]
+				if extConfig != nil {
+					setContainerDefaults(extConfig, defaultConfig)
+				} else {
+					extensionContainerConfig[defaultConfigName] = defaultConfig
+				}
+			}
+		}
 	}
 }
 

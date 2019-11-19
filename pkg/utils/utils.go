@@ -16,7 +16,7 @@ import (
 // KappnavExtension extends the reconciler to manage
 // additional resources and override default configuration.
 type KappnavExtension interface {
-	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav)
+	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) error
 	ReconcileAdditionalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
 }
 
@@ -27,15 +27,21 @@ const (
 	UIContainerName string = "kappnav-ui"
 	// ControllerContainerName ...
 	ControllerContainerName string = "kappnav-controller"
+	// OAuthProxyContainerName ...
+	OAuthProxyContainerName string = "oauth-proxy"
+	// OAuthProxyContainerConfigKey ...
+	OAuthProxyContainerConfigKey string = "oauthProxy"
 	// ServiceAccountNameSuffix ...
 	ServiceAccountNameSuffix string = "sa"
 )
 
 const (
-	// UIVolumeName ...
-	UIVolumeName string = "ui-service-tls"
-	// UIVolumeMountPath ...
-	UIVolumeMountPath string = "/etc/tls/private"
+	// OAuthRedirectAnnotationName ...
+	OAuthRedirectAnnotationName string = "serviceaccounts.openshift.io/oauth-redirectreference.primary"
+	// OAuthVolumeName ...
+	OAuthVolumeName string = "ui-service-tls"
+	// OAuthVolumeMountPath ...
+	OAuthVolumeMountPath string = "/etc/tls/private"
 )
 
 // GetLabels ...
@@ -69,8 +75,14 @@ func GetLabels(instance *kappnavv1.Kappnav,
 }
 
 // CustomizeServiceAccount ...
-func CustomizeServiceAccount(sa *corev1.ServiceAccount, instance *kappnavv1.Kappnav) {
+func CustomizeServiceAccount(sa *corev1.ServiceAccount, uiService *metav1.ObjectMeta, instance *kappnavv1.Kappnav) {
 	sa.Labels = GetLabels(instance, sa.Labels, &sa.ObjectMeta)
+	if sa.Annotations == nil {
+		sa.Annotations = make(map[string]string)
+	}
+	// Adding the OAuth proxy to the service account.
+	sa.Annotations[OAuthRedirectAnnotationName] = "{\"kind\":\"OAuthRedirectReference\",\"apiVersion\":\"v1\",\"reference\":{\"kind\":\"Route\",\"name\":\"" + uiService.GetName() + "\"}}"
+	// Adding pull secrets to the service account.
 	imagePullSecrets := make([]corev1.LocalObjectReference, 1)
 	imagePullSecrets[0] = corev1.LocalObjectReference{
 		Name: "sa-" + sa.GetNamespace(),
@@ -273,6 +285,7 @@ func CreateUIDeploymentContainers(existingContainers []corev1.Container, instanc
 	// Extract environment variables from existing containers.
 	var apiEnv []corev1.EnvVar = nil
 	var uiEnv []corev1.EnvVar = nil
+	var oauthProxyEnv []corev1.EnvVar = nil
 	if existingContainers != nil {
 		for _, c := range existingContainers {
 			switch containerName := c.Name; containerName {
@@ -280,15 +293,23 @@ func CreateUIDeploymentContainers(existingContainers []corev1.Container, instanc
 				apiEnv = c.Env
 			case UIContainerName:
 				uiEnv = c.Env
+			case OAuthProxyContainerName:
+				oauthProxyEnv = c.Env
 			}
 		}
 	}
-	return []corev1.Container{
+	containers := []corev1.Container{
 		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, apiEnv,
-			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
+			createAPIReadinessProbe(), createAPILivenessProbe(), nil, nil, nil),
 		*createContainer(UIContainerName, instance, instance.Spec.AppNavUI, uiEnv,
-			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIVolumeMount(instance)),
+			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIPorts(instance), nil, nil),
 	}
+	if !IsMinikubeEnv(instance.Spec.Env.KubeEnv) {
+		containers = append(containers, *createContainer(OAuthProxyContainerName, instance,
+			instance.Spec.ExtensionContainers[OAuthProxyContainerConfigKey], oauthProxyEnv, nil, nil,
+			createOAuthProxyPorts(instance), createOAuthProxyArgs(instance), createOAuthProxyVolumeMount(instance)))
+	}
+	return containers
 }
 
 // CreateControllerDeploymentContainers ...
@@ -308,15 +329,15 @@ func CreateControllerDeploymentContainers(existingContainers []corev1.Container,
 	}
 	return []corev1.Container{
 		*createContainer(APIContainerName, instance, instance.Spec.AppNavAPI, apiEnv,
-			createAPIReadinessProbe(), createAPILivenessProbe(), nil),
+			createAPIReadinessProbe(), createAPILivenessProbe(), nil, nil, nil),
 		*createContainer(ControllerContainerName, instance, instance.Spec.AppNavController, controllerEnv,
-			createControllerReadinessProbe(), createControllerLivenessProbe(), nil),
+			createControllerReadinessProbe(), createControllerLivenessProbe(), nil, nil, nil),
 	}
 }
 
 // CreateUIVolumes ...
 func CreateUIVolumes(instance *kappnavv1.Kappnav) []corev1.Volume {
-	name := instance.Name + "-" + UIVolumeName
+	name := instance.Name + "-" + OAuthVolumeName
 	return []corev1.Volume{
 		{
 			Name: name,
@@ -334,6 +355,8 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 	existingEnv []corev1.EnvVar,
 	readinessProbe *corev1.Probe,
 	livenessProbe *corev1.Probe,
+	ports []corev1.ContainerPort,
+	args []string,
 	volumeMount *corev1.VolumeMount) *corev1.Container {
 	container := &corev1.Container{
 		Name:            name,
@@ -355,6 +378,8 @@ func createContainer(name string, instance *kappnavv1.Kappnav,
 		},
 		ReadinessProbe: readinessProbe,
 		LivenessProbe:  livenessProbe,
+		Ports:          ports,
+		Args:           args,
 	}
 	// Copy custom environment variable settings.
 	if existingEnv != nil {
@@ -421,18 +446,11 @@ func createAPILivenessProbe() *corev1.Probe {
 }
 
 func createUIReadinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
-	kubeEnv := instance.Spec.Env.KubeEnv
-	var scheme corev1.URIScheme
-	if IsMinikubeEnv(kubeEnv) {
-		scheme = corev1.URISchemeHTTP
-	} else {
-		scheme = corev1.URISchemeHTTPS
-	}
 	return &corev1.Probe{
 		Handler: corev1.Handler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path:   "/health",
-				Scheme: scheme,
+				Scheme: corev1.URISchemeHTTP,
 				Port:   intstr.FromInt(3000),
 			},
 		},
@@ -449,10 +467,44 @@ func createUILiveinessProbe(instance *kappnavv1.Kappnav) *corev1.Probe {
 	return probe
 }
 
-func createUIVolumeMount(instance *kappnavv1.Kappnav) *corev1.VolumeMount {
+func createUIPorts(instance *kappnavv1.Kappnav) []corev1.ContainerPort {
+	return []corev1.ContainerPort{
+		{
+			ContainerPort: 3000,
+			Name:          "http",
+			Protocol:      corev1.ProtocolTCP,
+		},
+	}
+}
+
+func createOAuthProxyPorts(instance *kappnavv1.Kappnav) []corev1.ContainerPort {
+	return []corev1.ContainerPort{
+		{
+			ContainerPort: 8443,
+			Name:          "public",
+		},
+	}
+}
+
+func createOAuthProxyArgs(instance *kappnavv1.Kappnav) []string {
+	return []string{
+		"--https-address=:8443",
+		"--provider=openshift",
+		"--openshift-service-account=" + instance.GetName() + "-" + ServiceAccountNameSuffix,
+		"--upstream=http://localhost:3000",
+		"--tls-cert=/etc/tls/private/tls.crt",
+		"--tls-key=/etc/tls/private/tls.key",
+		"--cookie-secret=SECRET",
+		"--cookie-name=ssn",
+		"--cookie-expire=24h",
+		"--skip-auth-regex=.*appLauncher.js|.*featuredApp.js|.*appNavIcon.css|.*KAppNavlogo.svg",
+	}
+}
+
+func createOAuthProxyVolumeMount(instance *kappnavv1.Kappnav) *corev1.VolumeMount {
 	volumeMount := &corev1.VolumeMount{
-		MountPath: UIVolumeMountPath,
-		Name:      instance.Name + "-" + UIVolumeName,
+		MountPath: OAuthVolumeMountPath,
+		Name:      instance.Name + "-" + OAuthVolumeName,
 	}
 	return volumeMount
 }

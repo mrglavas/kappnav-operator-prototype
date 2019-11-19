@@ -61,3 +61,19 @@ spec:
   ###############################################################################
   env:
     kubeEnv: okd
+
+  ###############################################################################
+  ## Other container configuration
+  ###############################################################################
+  extensionContainers:
+    oauthProxy:
+      repository: quay.io/openshift/origin-oauth-proxy
+      tag: 4.3.0
+      resources:
+        enabled: false
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
