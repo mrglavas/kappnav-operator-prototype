@@ -54,6 +54,10 @@ or for finer grained control on resource deletion run:
 5. kubectl delete -f deploy/role_binding.yaml
 6. kubectl delete -f deploy/operator.yaml
 
+## Default values
+
+Default values for the operator's configuration are stored in `deploy/default_values.yaml`. This CR file is included is included in the Docker image and is read each time a Kappnav CR is reconciled by the operator to fill in defaults for values that were not specified in the CR.
+
 ## Adding additional CRDs to the operator
 
 Additional CRDs can be added to the `deploy/crds/extensions` folder. These will be included in the Docker image. The Application CRD is always included in the image. When the operator is installed it will attempt to create each of the CRDs in k8s if they do not already exist.
