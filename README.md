@@ -56,7 +56,7 @@ or for finer grained control on resource deletion run:
 
 ## Default values
 
-Default values for the operator's configuration are stored in `deploy/default_values.yaml`. This CR file is included is included in the Docker image and is read each time a Kappnav CR is reconciled by the operator to fill in defaults for values that were not specified in the CR.
+Default values for the operator's configuration are stored in `deploy/default_values.yaml`. This CR file is included in the Docker image and is read each time a Kappnav CR is reconciled by the operator to fill in defaults for values that were not specified in the CR.
 
 ## Adding additional CRDs to the operator
 
