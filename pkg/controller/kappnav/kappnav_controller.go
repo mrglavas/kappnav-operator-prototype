@@ -153,7 +153,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	extension := kappnavutils.NewKappnavExtension()
 
 	// Apply defaults to the Kappnav instance
-	err = kappnavutils.SetKappnavDefaults(instance, extension)
+	err = kappnavutils.SetKappnavDefaults(instance)
 	if err != nil {
 		reqLogger.Error(err, "Failed to process default values file")
 		return reconcile.Result{}, err
@@ -335,6 +335,23 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 				}
 			}
 		}
+	}
+
+	// Create or update builtin config
+	builtinConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "builtin",
+			Namespace: instance.GetNamespace(),
+		},
+	}
+	err = r.CreateOrUpdate(builtinConfig, instance, func() error {
+		kappnavutils.CustomizeConfigMap(builtinConfig, instance)
+		kappnavutils.CustomizeBuiltinConfigMap(builtinConfig, &r.ReconcilerBase, instance)
+		return nil
+	})
+	if err != nil {
+		reqLogger.Error(err, "Failed to reconcile the kappnav-config ConfigMap")
+		return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
 	}
 
 	// Create or update kappnav-config

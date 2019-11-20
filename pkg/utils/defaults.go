@@ -7,16 +7,10 @@ import (
 )
 
 // SetKappnavDefaults sets default values on the CR instance
-func SetKappnavDefaults(instance *kappnavv1.Kappnav, extension KappnavExtension) error {
+func SetKappnavDefaults(instance *kappnavv1.Kappnav) error {
 	defaults, err := getDefaults()
 	if err != nil {
 		return err
-	}
-	if extension != nil {
-		err = extension.ApplyAdditionalDefaults(instance, defaults)
-		if err != nil {
-			return err
-		}
 	}
 	setAPIContainerDefaults(instance, defaults)
 	setUIContainerDefaults(instance, defaults)
@@ -76,7 +70,6 @@ func setExtensionContainerDefaults(instance *kappnavv1.Kappnav, defaults *kappna
 		defaultExtensionContainerConfig := defaults.Spec.ExtensionContainers
 		if defaultExtensionContainerConfig != nil {
 			for defaultConfigName, defaultConfig := range defaultExtensionContainerConfig {
-				log.Info("Default extension config found: " + defaultConfigName)
 				extConfig := extensionContainerConfig[defaultConfigName]
 				if extConfig != nil {
 					setContainerDefaults(extConfig, defaultConfig)

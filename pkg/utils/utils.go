@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strings"
 	kappnavv1 "github.com/kappnav/operator/pkg/apis/kappnav/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -11,12 +12,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 )
 
-// KappnavExtension extends the reconciler to manage
-// additional resources and override default configuration.
+// KappnavExtension extends the reconciler to manage additional resources.
 type KappnavExtension interface {
-	ApplyAdditionalDefaults(instance *kappnavv1.Kappnav, defaults *kappnavv1.Kappnav) error
 	ReconcileAdditionalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
 }
 
@@ -254,6 +254,64 @@ func CustomizePodSpec(pts *corev1.PodTemplateSpec, parentComponent *metav1.Objec
 	setPodSecurity(pts)
 }
 
+// CustomizeBuiltinConfigMap ...
+func CustomizeBuiltinConfigMap(builtinConfig *corev1.ConfigMap, r *ReconcilerBase, instance *kappnavv1.Kappnav) {
+	// Initialize the config map or restore values if they have been deleted.
+	if builtinConfig.Data == nil {
+		builtinConfig.Data = make(map[string]string)
+	}
+	kubeEnv := instance.Spec.Env.KubeEnv
+	if IsMinikubeEnv(kubeEnv) {
+		value, _ := builtinConfig.Data["openshift-console-url"]
+		if len(value) == 0 {
+			builtinConfig.Data["openshift-console-url"] =
+				"http://127.0.0.1:8001/api/v1/namespaces/kube-system/services/http:kubernetes-dashboard:/proxy/#!"
+		}
+	} else if IsOpenShift(kubeEnv) {
+		value, _ := builtinConfig.Data["openshift-console-url"]
+		adminValue, _ := builtinConfig.Data["openshift-admin-console-url"]
+		if len(value) == 0 || len(adminValue) == 0 {
+			var publicURL string
+			var adminPublicURL string
+			if IsOCP(kubeEnv) {
+				clusterInfo := getOCPClusterInfo(r)
+				if clusterInfo != nil {
+					publicURL = clusterInfo.ConsoleBaseAddress
+					adminPublicURL = publicURL
+				}
+			} else {
+				clusterInfo := getOKDClusterInfo(r)
+				if clusterInfo != nil {
+					publicURL = clusterInfo.ConsolePublicURL
+					adminPublicURL = clusterInfo.AdminConsolePublicURL
+				}
+			}
+			if len(value) == 0 && len(publicURL) > 0 {
+				builtinConfig.Data["openshift-console-url"]  = publicURL
+			}
+			if len(adminValue) == 0 && len(adminPublicURL) > 0 {
+				builtinConfig.Data["openshift-admin-console-url"] = adminPublicURL
+			}
+		}
+	}
+	value, _ := builtinConfig.Data["liberty-problems-dashboard"]
+	if len(value) == 0 {
+		builtinConfig.Data["liberty-problems-dashboard"] = "Liberty-Problems-K5-20190909"
+	}
+	value, _ = builtinConfig.Data["liberty-traffic-dashboard"]
+	if len(value) == 0 {
+		builtinConfig.Data["liberty-traffic-dashboard"] = "Liberty-Traffic-K5-20190909"
+	}
+	value, _ = builtinConfig.Data["grafana-dashboard"]
+	if len(value) == 0 {
+		builtinConfig.Data["grafana-dashboard"] = "Liberty-Metrics-G5-20190521"
+	}
+	value, _ = builtinConfig.Data["grafana-m2-dashboard"]
+	if len(value) == 0 {
+		builtinConfig.Data["grafana-m2-dashboard"] = "Liberty-Metrics-M2-G5-20190521"
+	}
+}
+
 // CustomizeKappnavConfigMap ...
 func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
 	// Initialize the config map or restore values if they have been deleted.
@@ -304,6 +362,7 @@ func CreateUIDeploymentContainers(existingContainers []corev1.Container, instanc
 		*createContainer(UIContainerName, instance, instance.Spec.AppNavUI, uiEnv,
 			createUIReadinessProbe(instance), createUILiveinessProbe(instance), createUIPorts(instance), nil, nil),
 	}
+
 	if !IsMinikubeEnv(instance.Spec.Env.KubeEnv) {
 		containers = append(containers, *createContainer(OAuthProxyContainerName, instance,
 			instance.Spec.ExtensionContainers[OAuthProxyContainerConfigKey], oauthProxyEnv, nil, nil,
@@ -560,6 +619,99 @@ func setPodSecurity(pts *corev1.PodTemplateSpec) {
 // IsMinikubeEnv ...
 func IsMinikubeEnv(kubeEnv string) bool {
 	return kubeEnv == "minikube" || kubeEnv == "k8s"
+}
+
+// IsOpenShift ...
+func IsOpenShift(kubeEnv string) bool {
+	return kubeEnv == "minishift" || kubeEnv == "okd" || IsOCP(kubeEnv)
+}
+
+// IsOCP ...
+func IsOCP(kubeEnv string) bool {
+	return kubeEnv == "ocp"
+}
+
+// OCPConsoleConfig ...
+type OCPConsoleConfig struct {
+	ClusterInfo OCPClusterInfo `yaml:"clusterInfo,omitempty"`
+}
+
+// OCPClusterInfo ...
+type OCPClusterInfo struct {
+	ConsoleBaseAddress string `yaml:"consoleBaseAddress,omitempty"`
+}
+
+func getOCPClusterInfo(r *ReconcilerBase) *OCPClusterInfo {
+	config, err := r.GetOperatorConfigMap("console-config", "openshift-console")
+	if err != nil {
+		log.Error(err, "Could not retrieve console-config ConfigMap for OCP.")
+		return nil
+	}
+	if config.Data != nil {
+		value, _ := config.Data["console-config.yaml"]
+		if len(value) > 0 {
+			consoleConfig := &OCPConsoleConfig{}
+			err = yaml.Unmarshal([]byte(value), consoleConfig)
+			if err != nil {
+				log.Error(err, "Could not parse console-config.yaml.")
+				return nil
+			}
+			address := consoleConfig.ClusterInfo.ConsoleBaseAddress
+			if len(address) > 0 {
+				if strings.HasSuffix(address, "/") {
+					consoleConfig.ClusterInfo.ConsoleBaseAddress = address[0 : len(address)-1]
+				}
+			}
+			return &consoleConfig.ClusterInfo
+		}
+	}
+	log.Info("Could not retrieve cluster info from console-config for OCP.")
+	return nil
+}
+
+// OKDConsoleConfig ...
+type OKDConsoleConfig struct {
+	ClusterInfo OKDClusterInfo `yaml:"clusterInfo,omitempty"`
+}
+
+// OKDClusterInfo ...
+type OKDClusterInfo struct {
+	ConsolePublicURL      string `yaml:"consolePublicURL,omitempty"`
+	AdminConsolePublicURL string `yaml:"adminConsolePublicURL,omitempty"`
+}
+
+func getOKDClusterInfo(r *ReconcilerBase) *OKDClusterInfo {
+	config, err := r.GetOperatorConfigMap("webconsole-config", "openshift-web-console")
+	if err != nil {
+		log.Error(err, "Could not retrieve webconsole-config ConfigMap for OKD.")
+		return nil
+	}
+	if config.Data != nil {
+		value, _ := config.Data["webconsole-config.yaml"]
+		if len(value) > 0 {
+			consoleConfig := &OKDConsoleConfig{}
+			err = yaml.Unmarshal([]byte(value), consoleConfig)
+			if err != nil {
+				log.Error(err, "Could not parse webconsole-config.yaml.")
+				return nil
+			}
+			publicURL := consoleConfig.ClusterInfo.ConsolePublicURL
+			if len(publicURL) > 0 {
+				if strings.HasSuffix(publicURL, "/") {
+					consoleConfig.ClusterInfo.ConsolePublicURL = publicURL[0 : len(publicURL)-1]
+				}
+			}
+			adminPublicURL := consoleConfig.ClusterInfo.AdminConsolePublicURL
+			if len(adminPublicURL) > 0 {
+				if strings.HasSuffix(adminPublicURL, "/") {
+					consoleConfig.ClusterInfo.AdminConsolePublicURL = adminPublicURL[0 : len(adminPublicURL)-1]
+				}
+			}
+			return &consoleConfig.ClusterInfo
+		}
+	}
+	log.Info("Could not retrieve cluster info from webconsole-config for OKD.")
+	return nil
 }
 
 //
