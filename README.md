@@ -58,9 +58,9 @@ or for finer grained control on resource deletion run:
 
 Additional CRDs can be added to the `deploy/crds/extensions` folder. These will be included in the Docker image. The Application CRD is always included in the image. When the operator is installed it will attempt to create each of the CRDs in k8s if they do not already exist.
 
-## Adding additional status and action config maps to the operator
+## Adding additional action, sections and status config maps to the operator
 
-Additional action and status config maps should be added to the `deploy/maps/action` and `deploy/maps/status` folder. This supports the same templating language that is used in Helm charts. Variables are addressed by their field names in the Kappnav structs. For instance, the kubeEnv field from the CR would be addressed as `.Spec.Env.KubeEnv`. Action and status config maps will be initially created when a CR is installed.
+Additional action, sections and status config maps should be added to the `deploy/maps/action`, `deploy/maps/sections` and `deploy/maps/status` folders respectively. This supports the same templating language that is used in Helm charts. Variables are addressed by their field names in the Kappnav structs. For instance, the kubeEnv field from the CR would be addressed as `.Spec.Env.KubeEnv`. Action, sections and status config maps will be initially created when a CR is installed.
 
 ## Adding additional logic to the controller
 
