@@ -21,7 +21,7 @@ To build the project run: `./build.sh`
 
 ## Installing the kappnav operator
 
-To install the operator run:
+To install the operator on OKD run:
 
 1. kubectl create namespace kappnav
 2. kubectl create -f kappnav.yaml -n kappnav
@@ -39,7 +39,7 @@ Note: You should modify `kappnav_v1_kappnav_cr.yaml` for your Kube environment.
 
 ## Uninstalling the kappnav operator
 
-To uninstall the operator run:
+To uninstall the operator on OKD run:
 
 1. kubectl delete -f kappnav-delete-CR.yaml -n kappnav --now
 2. kubectl delete -f kappnav-delete.yaml -n kappnav
