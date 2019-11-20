@@ -23,6 +23,11 @@ To build the project run: `./build.sh`
 
 To install the operator run:
 
+1. kubectl create namespace kappnav
+2. kubectl create -f kappnav.yaml -n kappnav
+
+or for finer grained control on resource creation run:
+
 1. kubectl create -f deploy/crds/kappnav_v1_kappnav_crd.yaml
 2. kubectl create -f deploy/crds/kappnav_v1_kappnav_cr.yaml
 3. kubectl create -f deploy/service_account.yaml
@@ -35,6 +40,12 @@ Note: You should modify `kappnav_v1_kappnav_cr.yaml` for your Kube environment.
 ## Uninstalling the kappnav operator
 
 To uninstall the operator run:
+
+1. kubectl delete -f kappnav-delete-CR.yaml -n kappnav --now
+2. kubectl delete -f kappnav-delete.yaml -n kappnav
+3. kubectl delete namespace kappnav
+
+or for finer grained control on resource deletion run:
 
 1. kubectl delete -f deploy/crds/kappnav_v1_kappnav_crd.yaml
 2. kubectl delete -f deploy/crds/kappnav_v1_kappnav_cr.yaml
