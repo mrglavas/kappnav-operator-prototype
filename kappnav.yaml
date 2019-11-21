@@ -68,7 +68,7 @@ subjects:
   namespace: kappnav
 roleRef:
   kind: ClusterRole
-  name: helm-operator
+  name: kappnav-operator
   apiGroup: rbac.authorization.k8s.io
 ---
 
