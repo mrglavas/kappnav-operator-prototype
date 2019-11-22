@@ -1,3 +1,16 @@
+/*
+Copyright 2019 IBM Corporation
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package kappnav
 
 import (
@@ -14,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +38,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/yaml"
-	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 var log = logf.Log.WithName("controller_kappnav")
@@ -113,6 +126,11 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// Watch for changes to secondary resource Route (when available) and requeue the owner Kappnav
+	_ = c.Watch(&source.Kind{Type: &routev1.Route{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &kappnavv1.Kappnav{},
+	})
 	return nil
 }
 
@@ -212,6 +230,9 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		"service.alpha.openshift.io/serving-cert-secret-name": dummySecret.Name,
 	}
 
+	// Kappnav URL is computed from the route
+	kappnavURL := ""
+
 	isMinikube := kappnavutils.IsMinikubeEnv(instance.Spec.Env.KubeEnv)
 	if isMinikube {
 		// Create or update dummy secret
@@ -272,6 +293,12 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 		if err != nil {
 			reqLogger.Error(err, "Failed to reconcile the UI route")
 			return r.ManageError(err, kappnavv1.StatusConditionTypeReconciled, instance)
+		}
+		// Compute Kappnav URL from route.
+		routeHost := uiRoute.Spec.Host
+		routePath := uiRoute.Spec.Path
+		if len(routeHost) > 0 && len(routePath) > 0 {
+			kappnavURL = "https://" + routeHost + routePath
 		}
 	}
 
@@ -363,7 +390,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 	err = r.CreateOrUpdate(kappnavConfig, instance, func() error {
 		kappnavutils.CustomizeConfigMap(kappnavConfig, instance)
-		kappnavutils.CustomizeKappnavConfigMap(kappnavConfig, instance)
+		kappnavutils.CustomizeKappnavConfigMap(kappnavConfig, kappnavURL, instance)
 		return nil
 	})
 	if err != nil {

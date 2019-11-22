@@ -1,3 +1,16 @@
+/*
+Copyright 2019 IBM Corporation
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package utils
 
 import (
@@ -12,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -21,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // ReconcilerBase base reconciler with some common behaviour
@@ -143,8 +157,30 @@ func (r *ReconcilerBase) DeleteResources(resources []runtime.Object) error {
 
 // GetOperatorConfigMap ...
 func (r *ReconcilerBase) GetOperatorConfigMap(name string, ns string) (*corev1.ConfigMap, error) {
+	log.Info("Attempting to read ConfigMap, name: " + name + ", namespace: " + ns)
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "",
+		Kind:    "ConfigMap",
+		Version: "v1",
+	})
+	err := r.GetClient().Get(context.TODO(), client.ObjectKey{
+		Namespace: ns,
+		Name:      name,
+	}, u)
+	if err != nil {
+		return nil, err
+	}
+	b, err := u.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	b, err = yaml.JSONToYAML(b)
+	if err != nil {
+		return nil, err
+	}
 	configMap := &corev1.ConfigMap{}
-	err := r.GetClient().Get(context.TODO(), types.NamespacedName{Name: name, Namespace: ns}, configMap)
+	err = yaml.Unmarshal(b, configMap)
 	if err != nil {
 		return nil, err
 	}

@@ -1,3 +1,16 @@
+/*
+Copyright 2019 IBM Corporation
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package utils
 
 import (
@@ -313,7 +326,7 @@ func CustomizeBuiltinConfigMap(builtinConfig *corev1.ConfigMap, r *ReconcilerBas
 }
 
 // CustomizeKappnavConfigMap ...
-func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappnavv1.Kappnav) {
+func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, kappnavURL string, instance *kappnavv1.Kappnav) {
 	// Initialize the config map or restore values if they have been deleted.
 	if kappnavConfig.Data == nil {
 		kappnavConfig.Data = make(map[string]string)
@@ -335,6 +348,12 @@ func CustomizeKappnavConfigMap(kappnavConfig *corev1.ConfigMap, instance *kappna
 	value, _ = kappnavConfig.Data["kappnav-sa-name"]
 	if len(value) == 0 {
 		kappnavConfig.Data["kappnav-sa-name"] = instance.GetName() + "-" + ServiceAccountNameSuffix
+	}
+	if IsOpenShift(instance.Spec.Env.KubeEnv) {
+		value, _ = kappnavConfig.Data["kappnav-url"]
+		if len(value) == 0 && len(kappnavURL) > 0 {
+			kappnavConfig.Data["kappnav-url"] = kappnavURL
+		}
 	}
 }
 
