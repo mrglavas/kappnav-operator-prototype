@@ -30,7 +30,7 @@ import (
 
 // KappnavExtension extends the reconciler to manage additional resources.
 type KappnavExtension interface {
-	ReconcileAdditionalResources(request reconcile.Request, instance *kappnavv1.Kappnav) (reconcile.Result, error)
+	ReconcileAdditionalResources(request reconcile.Request, r *ReconcilerBase, instance *kappnavv1.Kappnav) (reconcile.Result, error)
 }
 
 const (

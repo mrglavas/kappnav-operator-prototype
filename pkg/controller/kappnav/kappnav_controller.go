@@ -439,7 +439,7 @@ func (r *ReconcileKappnav) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// If an extension exists call its reconcile function, otherwise return success.
 	if extension != nil {
-		return extension.ReconcileAdditionalResources(request, instance)
+		return extension.ReconcileAdditionalResources(request, &r.ReconcilerBase, instance)
 	}
 	return r.ManageSuccess(kappnavv1.StatusConditionTypeReconciled, instance)
 }

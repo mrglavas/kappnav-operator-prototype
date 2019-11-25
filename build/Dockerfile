@@ -34,6 +34,8 @@ ENV OPERATOR=/usr/local/bin/kappnav-operator \
 
 # install operator binary
 COPY build/_output/bin/${PROJECT_NAME} ${OPERATOR}
+
+# copying various resources into the image
 COPY deploy/default_values.yaml deploy/
 COPY deploy/maps/ maps/
 COPY deploy/crds/extensions crds/
@@ -41,6 +43,9 @@ COPY deploy/crds/extensions crds/
 # get application CRD from Kubernetes Application SIG
 RUN curl -fsSLO --compressed https://raw.githubusercontent.com/kubernetes-sigs/application/master/config/crds/app_v1beta1_application.yaml \
     && mv app_v1beta1_application.yaml crds/
+
+# copy license files into the image
+COPY licenses/ /licenses/
 
 COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
