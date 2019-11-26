@@ -21,21 +21,16 @@ metadata:
 data:
   url-actions: |
     [
-{{ if or (eq .Spec.Env.KubeEnv "minishift") (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp") }}
       { 
         "name":"projdoc", 
         "text":"View Project Doc", 
         "text.nls":"action.url.deployment.projdoc.text", 
         "description":"View project documentation.", 
         "description.nls":"action.url.deployment.projdoc.desc", 
-{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
         "url-pattern":"${resource.$.metadata.annotations['image.opencontainers.org/documentation']}",
-{{ else }}
-        "url-pattern": "",
-{{ end }}
         "open-window": "tab", 
         "menu-item": "true",
-        "enablement-label": "stack.appsody.dev/id"
+        "enablement-annotation": "image.opencontainers.org/documentation"
       },
       { 
         "name":"projcode", 
@@ -43,14 +38,10 @@ data:
         "text.nls":"action.url.deployment.projcode.text", 
         "description":"View project source code.", 
         "description.nls":"action.url.deployment.projcode.desc", 
-{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
         "url-pattern":"${resource.$.metadata.annotations['image.opencontainers.org/source']}",
-{{ else }}
-        "url-pattern": "",
-{{ end }}
         "open-window": "tab", 
         "menu-item": "true",
-        "enablement-label": "stack.appsody.dev/id"
+        "enablement-annotation": "image.opencontainers.org/source"
       },
       { 
         "name":"kabcolldoc", 
@@ -58,14 +49,10 @@ data:
         "text.nls":"action.url.deployment.kabcolldoc.text", 
         "description":"View Kabanero Collection Documentation.", 
         "description.nls":"action.url.deployment.kabcolldoc.desc", 
-{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
         "url-pattern":"${resource.$.metadata.annotations['stack.appsody.dev/documentation']}",
-{{ else }}
-        "url-pattern": "",
-{{ end }}
         "open-window": "tab", 
         "menu-item": "true",
-        "enablement-label": "stack.appsody.dev/id"
+        "enablement-annotation": "stack.appsody.dev/documentation"
       },
       { 
         "name":"kabcollcode", 
@@ -73,15 +60,12 @@ data:
         "text.nls":"action.url.deployment.kabcollcode.text", 
         "description":"View Kabanero collection source code.", 
         "description.nls":"action.url.deployment.kabcollcode.desc", 
-{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
         "url-pattern":"${resource.$.metadata.annotations['stack.appsody.dev/source']}",
-{{ else }}
-        "url-pattern": "",
-{{ end }}
         "open-window": "tab", 
         "menu-item": "true",
-        "enablement-label": "stack.appsody.dev/id" 
+        "enablement-annotation": "stack.appsody.dev/source" 
       },
+{{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp") }}
       { 
         "name":"replicas", 
         "text":"View Replicas", 
@@ -92,6 +76,7 @@ data:
         "open-window": "current", 
         "menu-item": "true" 
       },
+{{ end }}
       { 
         "name":"detail", 
         "text":"View Detail", 
@@ -101,23 +86,9 @@ data:
 {{ if or (eq .Spec.Env.KubeEnv "okd") (eq .Spec.Env.KubeEnv "ocp")}}
         "url-pattern":"${builtin.openshift-admin-console-url}/k8s/ns/${resource.$.metadata.namespace}/deployments/${resource.$.metadata.name}",
 {{ else }}
-        "url-pattern": "",
+        "url-pattern":"${builtin.openshift-console-url}/deployment/${resource.$.metadata.namespace}/${resource.$.metadata.name}?namespace=${resource.$.metadata.namespace}",
 {{ end }}
         "open-window": "current", 
         "menu-item": "false" 
       }
-{{ end }}
-        
-{{ if eq .Spec.Env.KubeEnv "minikube" }}       
-      { 
-        "name":"detail", 
-        "text":"View Detail", 
-        "text.nls":"action.url.deployment.detail.text", 
-        "description":"View Deployment detail", 
-        "description.nls":"action.url.deployment.detail.desc", 
-        "url-pattern":"${builtin.openshift-console-url}/deployment/${resource.$.metadata.namespace}/${resource.$.metadata.name}?namespace=${resource.$.metadata.namespace}",
-        "open-window": "current", 
-        "menu-item": "false" 
-      }  
-{{ end }}
     ]
